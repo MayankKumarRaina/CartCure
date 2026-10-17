@@ -10,38 +10,27 @@ import { toCartLines, quoteAll, bestOption, formatINR } from "@/lib/pricing"
 import { MembershipMatrix } from "@/components/membership-matrix"
 import { cn } from "@/lib/utils"
 
-interface CartDrawerProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}
-
-export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
-  // 1. Extract live platforms from useCart
-  const { items, increment, decrement, medicines, platforms } = useCart()
+export function CartDrawer() {
+  const { items, increment, decrement, medicines, platforms, isOpen, setOpen } = useCart()
   const [viewMode, setViewMode] = useState<'standard' | 'membership'>('standard')
   const [includeMembership, setIncludeMembership] = useState(false)
   const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(null)
 
-  // Accurately count items to prevent phantom rendering
   const actualTotalItems = Object.values(items).reduce((sum, qty) => sum + (qty || 0), 0)
   
-  // Core pricing engine
   const cartLines = useMemo(() => toCartLines(items, medicines), [items, medicines])
-  
-  // 2. Pass platforms into quoteAll so the matrix uses auto-detected Supabase memberships
   const quotes = useMemo(() => quoteAll(cartLines, platforms), [cartLines, platforms])
   const sortedQuotes = [...quotes].sort((a, b) => a.standardTotal - b.standardTotal)
   
-  const mrpTotal = cartLines.reduce((sum, line) => sum + (line.medicine.mrp * line.quantity), 0)
+  const mrpTotal = cartLines.reduce((sum, line) => sum + (line.medicine.mrp * line.qty), 0)
   const best = bestOption(quotes, includeMembership)
   
-  // Allow manual override, otherwise default to absolute cheapest
   const activeQuote = selectedPlatformId 
     ? quotes.find(q => q.platform.id === selectedPlatformId) || best 
     : best
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={isOpen} onOpenChange={setOpen}>
       <SheetContent className="w-full sm:max-w-md flex flex-col p-0">
         <SheetHeader className="p-4 border-b">
           <SheetTitle className="text-left flex items-center justify-between">
@@ -61,7 +50,6 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
             </div>
           ) : (
             <>
-              {/* Basket Items List */}
               <div className="space-y-3">
                 {cartLines.map((line) => (
                   <div key={line.medicine.id} className="p-3 border rounded-xl flex items-center justify-between bg-card shadow-sm">
@@ -74,9 +62,9 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                     <div className="flex items-center gap-3">
                       <div className="flex items-center border rounded-lg bg-background">
                         <button onClick={() => decrement(line.medicine.id)} className="p-1.5 text-muted-foreground hover:text-foreground transition-colors">
-                          {line.quantity === 1 ? <Trash2 className="w-3.5 h-3.5" /> : <Minus className="w-3.5 h-3.5" />}
+                          {line.qty === 1 ? <Trash2 className="w-3.5 h-3.5" /> : <Minus className="w-3.5 h-3.5" />}
                         </button>
-                        <span className="text-xs font-semibold px-2 w-6 text-center">{line.quantity}</span>
+                        <span className="text-xs font-semibold px-2 w-6 text-center">{line.qty}</span>
                         <button onClick={() => increment(line.medicine.id)} className="p-1.5 text-primary hover:bg-primary-soft transition-colors">
                           <Plus className="w-3.5 h-3.5" />
                         </button>
@@ -86,7 +74,6 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                 ))}
               </div>
 
-              {/* View Toggle */}
               <div className="flex p-1 bg-muted rounded-xl">
                 <button
                   className={cn("flex-1 p-2 text-xs font-semibold rounded-lg transition-all", viewMode === 'standard' ? "bg-card shadow-sm text-foreground" : "text-muted-foreground")}
@@ -117,7 +104,6 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                 </div>
               )}
 
-              {/* Content based on view mode */}
               {viewMode === 'standard' ? (
                 <div className="pt-1 space-y-2.5">
                   <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 ml-1">Basket Total By Platform</h4>
@@ -171,7 +157,6 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
           )}
         </div>
 
-        {/* Dynamic Outbound Checkout Footer */}
         {actualTotalItems > 0 && activeQuote && (
           <div className="p-4 border-t bg-card">
             <div className="flex items-center justify-between text-sm mb-3">
@@ -183,7 +168,6 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
             <Button
               className="w-full h-12 text-sm font-semibold bg-success hover:bg-success/90 text-success-foreground rounded-xl flex items-center justify-center gap-2"
               onClick={() => {
-                // In future: Route to real checkout. For now, alerts to confirm selected platform works.
                 alert(`Redirecting to ${activeQuote.platform.name} checkout...`)
               }}
             >
