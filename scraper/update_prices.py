@@ -1,12 +1,16 @@
+import os
 import asyncio
 import re
 from urllib.parse import quote
 from playwright.async_api import async_playwright
 from supabase import create_client, Client
 
-# Your existing Supabase connection
 SUPABASE_URL = "https://sofowqilxmplbfownnqh.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNvZm93cWlseG1wbGJmb3dubnFoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIyMzA1MDcsImV4cCI6MjEwNzgwNjUwN30.18rDg6X-3eJx1N9jHgbPCdZhYt5m23OiaL9DBQ73qE4"
+# Use the admin key from GitHub Secrets, or fallback to the public anon key for local testing
+SUPABASE_KEY = os.environ.get(
+    "SUPABASE_SERVICE_KEY", 
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNvZm93cWlseG1wbGJmb3dubnFoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIyMzA1MDcsImV4cCI6MjEwNzgwNjUwN30.18rDg6X-3eJx1N9jHgbPCdZhYt5m23OiaL9DBQ73qE4"
+)
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 

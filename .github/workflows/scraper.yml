@@ -30,3 +30,8 @@ jobs:
         
       - name: Execute scraper
         run: python scraper/update_prices.py
+
+      - name: Execute scraper
+        env:
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python scraper/update_prices.py
