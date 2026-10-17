@@ -7,12 +7,18 @@ import { useCart } from '@/components/cart-provider'
 import { bestOption, formatINR, quoteAll, toCartLines } from '@/lib/pricing'
 
 export function BasketBar() {
-  const { items, totalItems, setOpen, isOpen, medicines } = useCart()
-  const best = useMemo(() => bestOption(quoteAll(toCartLines(items, medicines)), false), [items, medicines])
+  const { items, setOpen, isOpen, medicines } = useCart()
+  
+  // Accurately count total quantities across the dictionary
+  const actualTotalItems = Object.values(items).reduce((sum, qty) => sum + (qty || 0), 0)
+  
+  const cartLines = useMemo(() => toCartLines(items, medicines), [items, medicines])
+  const quotes = useMemo(() => quoteAll(cartLines), [cartLines])
+  const best = useMemo(() => bestOption(quotes, false), [quotes])
 
   return (
     <AnimatePresence>
-      {best && !isOpen && (
+      {actualTotalItems > 0 && best && !isOpen && (
         <motion.div
           initial={{ y: 80, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -30,7 +36,7 @@ export function BasketBar() {
             </span>
             <span className="flex flex-1 flex-col">
               <span className="text-sm font-semibold">
-                {totalItems} {totalItems === 1 ? 'item' : 'items'} · from {formatINR(best.cost)}
+                {actualTotalItems} {actualTotalItems === 1 ? 'item' : 'items'} · from {formatINR(best.cost ?? best.standardTotal)}
               </span>
               <span className="text-[11px] text-background/70">
                 Cheapest on {best.platform.name}

@@ -2,9 +2,9 @@ name: Daily Price Scraper
 
 on:
   schedule:
-    # 00:30 UTC is exactly 6:00 AM IST. Runs every single day.
+    # Runs at 00:30 UTC (6:00 AM IST) and 12:30 UTC (6:00 PM IST)
     - cron: '30 0 * * *'
-  # This line allows you to click a button in GitHub to run it manually whenever you want
+    - cron: '30 12 * * *'
   workflow_dispatch:
 
 jobs:
@@ -28,9 +28,6 @@ jobs:
       - name: Install Playwright headless browser
         run: python -m playwright install chromium
         
-      - name: Execute scraper
-        run: python scraper/update_prices.py
-
       - name: Execute scraper
         env:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

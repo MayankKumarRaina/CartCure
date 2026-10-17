@@ -1,82 +1,41 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useCart } from "@/components/cart-provider"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
-import { Trash2, Plus, Minus, ExternalLink, Check } from "lucide-react"
+import { Trash2, Plus, Minus, ExternalLink, ShoppingBag } from "lucide-react"
+import { toCartLines, quoteAll, bestOption, formatINR } from "@/lib/pricing"
+import { MembershipMatrix } from "@/components/membership-matrix"
+import { cn } from "@/lib/utils"
 
 interface CartDrawerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
-// Baseline platform delivery fees and standard thresholds
-const PLATFORM_CONFIG: Record<string, { deliveryFee: number; minFreeDelivery: number }> = {
-  "Tata 1mg": { deliveryFee: 50, minFreeDelivery: 500 },
-  "PharmEasy": { deliveryFee: 49, minFreeDelivery: 499 },
-  "Netmeds": { deliveryFee: 49, minFreeDelivery: 500 },
-  "Apollo Pharmacy": { deliveryFee: 40, minFreeDelivery: 400 },
-  "Truemeds": { deliveryFee: 50, minFreeDelivery: 500 },
-  "MedPlus": { deliveryFee: 35, minFreeDelivery: 350 },
-}
-
 export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
-  const { items, removeItem, updateQuantity } = useCart()
+  const { items, increment, decrement, medicines } = useCart()
+  const [viewMode, setViewMode] = useState<'standard' | 'membership'>('standard')
   const [includeMembership, setIncludeMembership] = useState(false)
-  const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null)
+  const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(null)
 
-  // Collect all unique platforms present across all items in basket
-  const platformNames = Array.from(
-    new Set(
-      items.flatMap((item) =>
-        (item.medicine.pharmacy_prices || []).map((p) => p.platform_name)
-      )
-    )
-  )
-
-  // Calculate totals per platform
-  const platformTotals = platformNames.map((platform) => {
-    let medicineTotal = 0
-    let mrpTotal = 0
-    let primaryCheckoutUrl = ""
-
-    items.forEach((item) => {
-      const match = item.medicine.pharmacy_prices?.find(
-        (p) => p.platform_name === platform
-      )
-      const unitPrice = match?.selling_price ?? item.medicine.mrp
-      medicineTotal += unitPrice * item.quantity
-      mrpTotal += item.medicine.mrp * item.quantity
-
-      if (!primaryCheckoutUrl && match?.product_url) {
-        primaryCheckoutUrl = match.product_url
-      }
-    })
-
-    const config = PLATFORM_CONFIG[platform] || { deliveryFee: 50, minFreeDelivery: 500 }
-    const deliveryFee = medicineTotal >= config.minFreeDelivery ? 0 : config.deliveryFee
-    const totalWithoutPlan = medicineTotal + deliveryFee
-
-    return {
-      name: platform,
-      medicineTotal,
-      mrpTotal,
-      deliveryFee,
-      total: totalWithoutPlan,
-      savings: mrpTotal - totalWithoutPlan,
-      checkoutUrl: primaryCheckoutUrl || "#",
-    }
-  })
-
-  // Sort by lowest price first
-  platformTotals.sort((a, b) => a.total - b.total)
-  const cheapestPlatform = platformTotals[0]
-
-  // Active choice: user's manual selection, fallback to cheapest
-  const activePlatform =
-    platformTotals.find((p) => p.name === selectedPlatform) || cheapestPlatform
+  // Accurately count items to prevent phantom rendering
+  const actualTotalItems = Object.values(items).reduce((sum, qty) => sum + (qty || 0), 0)
+  
+  // Core pricing engine
+  const cartLines = useMemo(() => toCartLines(items, medicines), [items, medicines])
+  const quotes = useMemo(() => quoteAll(cartLines), [cartLines])
+  const sortedQuotes = [...quotes].sort((a, b) => a.standardTotal - b.standardTotal)
+  
+  const mrpTotal = cartLines.reduce((sum, line) => sum + (line.medicine.mrp * line.quantity), 0)
+  const best = bestOption(quotes, includeMembership)
+  
+  // Allow manual override, otherwise default to absolute cheapest
+  const activeQuote = selectedPlatformId 
+    ? quotes.find(q => q.platform.id === selectedPlatformId) || best 
+    : best
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -84,146 +43,115 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
         <SheetHeader className="p-4 border-b">
           <SheetTitle className="text-left flex items-center justify-between">
             <span>Your basket</span>
-            <span className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-600 px-2.5 py-1 rounded-full font-medium">
-              {items.reduce((acc, i) => acc + i.quantity, 0)} items
+            <span className="text-xs bg-muted text-muted-foreground px-2.5 py-1 rounded-full font-medium">
+              {actualTotalItems} {actualTotalItems === 1 ? 'item' : 'items'}
             </span>
           </SheetTitle>
         </SheetHeader>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {items.length === 0 ? (
-            <div className="py-12 text-center text-slate-500 text-sm">
-              Your basket is empty. Add medicines to compare carts.
+        <div className="flex-1 overflow-y-auto p-4 space-y-5 bg-slate-50/50 dark:bg-background">
+          {actualTotalItems === 0 ? (
+            <div className="py-16 text-center text-muted-foreground text-sm flex flex-col items-center gap-3">
+               <ShoppingBag className="size-10 text-slate-300 dark:text-slate-700" />
+               <p className="font-semibold text-foreground">Your basket is empty</p>
+               <p className="text-xs px-4">Add your monthly medicines to see which platform — and which membership — saves you the most.</p>
             </div>
           ) : (
             <>
               {/* Basket Items List */}
               <div className="space-y-3">
-                {items.map((item) => (
-                  <div
-                    key={item.medicine.id}
-                    className="p-3 border rounded-xl flex items-center justify-between bg-white dark:bg-slate-900 shadow-sm"
-                  >
+                {cartLines.map((line) => (
+                  <div key={line.medicine.id} className="p-3 border rounded-xl flex items-center justify-between bg-card shadow-sm">
                     <div className="flex-1 pr-2">
-                      <p className="font-semibold text-sm leading-tight text-slate-900 dark:text-slate-100">
-                        {item.medicine.brand_name}
-                      </p>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {item.medicine.pack_size}
-                      </p>
-                      <p className="text-xs font-medium text-emerald-600 mt-1">
-                        MRP: ₹{item.medicine.mrp}
+                      <p className="font-semibold text-sm leading-tight">{line.medicine.name}</p>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        MRP: <span className="line-through">{formatINR(line.medicine.mrp)}</span>
                       </p>
                     </div>
-
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center border rounded-lg bg-slate-50 dark:bg-slate-800">
-                        <button
-                          onClick={() => updateQuantity(item.medicine.id, item.quantity - 1)}
-                          className="p-1.5 hover:text-red-500 transition"
-                        >
-                          <Minus className="w-3.5 h-3.5" />
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center border rounded-lg bg-background">
+                        <button onClick={() => decrement(line.medicine.id)} className="p-1.5 text-muted-foreground hover:text-foreground transition-colors">
+                          {line.quantity === 1 ? <Trash2 className="w-3.5 h-3.5" /> : <Minus className="w-3.5 h-3.5" />}
                         </button>
-                        <span className="text-xs font-semibold px-2">
-                          {item.quantity}
-                        </span>
-                        <button
-                          onClick={() => updateQuantity(item.medicine.id, item.quantity + 1)}
-                          className="p-1.5 hover:text-emerald-500 transition"
-                        >
+                        <span className="text-xs font-semibold px-2 w-6 text-center">{line.quantity}</span>
+                        <button onClick={() => increment(line.medicine.id)} className="p-1.5 text-primary hover:bg-primary-soft transition-colors">
                           <Plus className="w-3.5 h-3.5" />
                         </button>
                       </div>
-
-                      <button
-                        onClick={() => removeItem(item.medicine.id)}
-                        className="text-slate-400 hover:text-red-500 transition p-1"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* Membership Switcher */}
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-slate-800 dark:text-slate-200">
-                    Include membership savings
-                  </p>
-                  <p className="text-[11px] text-slate-500">
-                    Factor in 1mg Care Plan & PharmEasy Plus
-                  </p>
-                </div>
-                <Switch
-                  checked={includeMembership}
-                  onCheckedChange={setIncludeMembership}
-                />
+              {/* View Toggle */}
+              <div className="flex p-1 bg-muted rounded-xl">
+                <button
+                  className={cn("flex-1 p-2 text-xs font-semibold rounded-lg transition-all", viewMode === 'standard' ? "bg-card shadow-sm text-foreground" : "text-muted-foreground")}
+                  onClick={() => setViewMode('standard')}
+                >
+                  <div className="flex flex-col">
+                    <span>Standard One-Time Buy</span>
+                    <span className="text-[10px] font-normal opacity-70">Pay as you go</span>
+                  </div>
+                </button>
+                <button
+                  className={cn("flex-1 p-2 text-xs font-semibold rounded-lg transition-all", viewMode === 'membership' ? "bg-card shadow-sm text-foreground" : "text-muted-foreground")}
+                  onClick={() => setViewMode('membership')}
+                >
+                  <div className="flex flex-col">
+                    <span>Compare with Memberships</span>
+                    <span className="text-[10px] font-normal opacity-70">Care Plan / Plus</span>
+                  </div>
+                </button>
               </div>
 
-              {/* Select Platform Header */}
-              <div className="pt-2">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                    Choose Store
-                  </h4>
-                  <span className="text-[11px] text-slate-400">
-                    Tap any platform to switch
-                  </span>
+              {viewMode === 'membership' && (
+                <div className="p-3.5 bg-card rounded-xl border flex items-center justify-between shadow-sm">
+                  <div>
+                    <p className="text-xs font-medium text-foreground">Include membership savings in best price</p>
+                  </div>
+                  <Switch checked={includeMembership} onCheckedChange={setIncludeMembership} />
                 </div>
+              )}
 
-                {/* Clickable Platform Selection Cards */}
-                <div className="space-y-2">
-                  {platformTotals.map((platform) => {
-                    const isSelected = activePlatform?.name === platform.name
-                    const isCheapest = cheapestPlatform?.name === platform.name
+              {/* Content based on view mode */}
+              {viewMode === 'standard' ? (
+                <div className="pt-1 space-y-2.5">
+                  <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 ml-1">Basket Total By Platform</h4>
+                  {sortedQuotes.map((quote) => {
+                    const isSelected = activeQuote?.platform.id === quote.platform.id
+                    const isCheapest = sortedQuotes[0].platform.id === quote.platform.id
+                    const standardSavings = mrpTotal - quote.standardTotal
 
                     return (
                       <div
-                        key={platform.name}
-                        onClick={() => setSelectedPlatform(platform.name)}
-                        className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                          isSelected
-                            ? "border-emerald-600 bg-emerald-50/40 dark:bg-emerald-950/20 ring-1 ring-emerald-600 shadow-sm"
-                            : "border-slate-200 hover:border-slate-300 bg-white dark:bg-slate-900"
-                        }`}
+                        key={quote.platform.id}
+                        onClick={() => setSelectedPlatformId(quote.platform.id)}
+                        className={cn(
+                          "p-3.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between",
+                          isSelected ? "border-success bg-success-soft ring-1 ring-success/30 shadow-sm" : "bg-card hover:border-slate-300"
+                        )}
                       >
-                        <div className="flex items-center gap-2.5">
-                          <div
-                            className={`w-4 h-4 rounded-full border flex items-center justify-center transition ${
-                              isSelected
-                                ? "border-emerald-600 bg-emerald-600 text-white"
-                                : "border-slate-300 bg-white"
-                            }`}
-                          >
-                            {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                          </div>
-
+                        <div className="flex items-center gap-3">
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                {platform.name}
-                              </span>
+                              <span className="text-sm font-semibold">{quote.platform.name}</span>
                               {isCheapest && (
-                                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                                <span className="text-[9px] bg-success text-success-foreground font-bold px-1.5 py-0.5 rounded-sm">
                                   CHEAPEST
                                 </span>
                               )}
                             </div>
-                            <span className="text-xs text-slate-500">
-                              ₹{platform.medicineTotal} + ₹{platform.deliveryFee} delivery
+                            <span className="text-[11px] text-muted-foreground mt-1 block">
+                              {formatINR(quote.subtotal)} + {quote.delivery === 0 ? 'Free' : formatINR(quote.delivery)} delivery
                             </span>
                           </div>
                         </div>
-
                         <div className="text-right">
-                          <p className="text-base font-bold text-slate-900 dark:text-slate-100">
-                            ₹{platform.total}
-                          </p>
-                          {platform.savings > 0 && (
-                            <p className="text-[11px] font-semibold text-emerald-600">
-                              Save ₹{platform.savings}
+                          <p className="text-sm font-bold text-foreground">{formatINR(quote.standardTotal)}</p>
+                          {standardSavings > 0 && (
+                            <p className="text-[11px] font-medium text-success mt-0.5">
+                              Save {formatINR(standardSavings)}
                             </p>
                           )}
                         </div>
@@ -231,30 +159,32 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
                     )
                   })}
                 </div>
-              </div>
+              ) : (
+                <div className="pt-2">
+                   <MembershipMatrix quotes={quotes} bestPlatform={best?.platform.id ?? null} />
+                </div>
+              )}
             </>
           )}
         </div>
 
         {/* Dynamic Outbound Checkout Footer */}
-        {items.length > 0 && activePlatform && (
-          <div className="p-4 border-t bg-white dark:bg-slate-900 space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-500 font-medium">Selected Store:</span>
-              <span className="font-bold text-slate-900 dark:text-slate-100">
-                {activePlatform.name} (₹{activePlatform.total})
+        {actualTotalItems > 0 && activeQuote && (
+          <div className="p-4 border-t bg-card">
+            <div className="flex items-center justify-between text-sm mb-3">
+              <span className="text-muted-foreground">Basket total today</span>
+              <span className="font-bold text-lg">
+                {formatINR(includeMembership && viewMode === 'membership' ? activeQuote.memberPayToday : activeQuote.standardTotal)}
               </span>
             </div>
-
             <Button
-              className="w-full h-12 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2 rounded-xl"
+              className="w-full h-12 text-sm font-semibold bg-success hover:bg-success/90 text-success-foreground rounded-xl flex items-center justify-center gap-2"
               onClick={() => {
-                if (activePlatform.checkoutUrl && activePlatform.checkoutUrl !== "#") {
-                  window.open(activePlatform.checkoutUrl, "_blank")
-                }
+                // In future: Route to real checkout. For now, alerts to confirm selected platform works.
+                alert(`Redirecting to ${activeQuote.platform.name} checkout...`)
               }}
             >
-              <span>Proceed to {activePlatform.name}</span>
+              <span>Proceed to {activeQuote.platform.name}</span>
               <ExternalLink className="w-4 h-4" />
             </Button>
           </div>
