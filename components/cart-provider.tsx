@@ -19,16 +19,32 @@ interface CartContextType {
   decrement: (id: string) => void
   removeItem: (id: string) => void
   medicines: Medicine[]
-  platforms: Platform[] // NEW: Expose live platforms globally
+  platforms: Platform[] 
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined)
 
-export function CartProvider({ children }: { children: ReactNode }) {
+// RESTORED: Accept the medicines prop so the Live DB connects properly
+export function CartProvider({ 
+  children, 
+  medicines: liveMedicines 
+}: { 
+  children: ReactNode; 
+  medicines?: Medicine[] 
+}) {
   const [items, setItems] = useState<Record<string, number>>({})
   const [isOpen, setOpen] = useState(false)
-  const [medicines, setMedicines] = useState<Medicine[]>(MEDICINES)
+  
+  // Use live Supabase medicines if passed in, otherwise fallback to demo data
+  const [medicines, setMedicines] = useState<Medicine[]>(liveMedicines || MEDICINES)
   const [platforms, setPlatforms] = useState<Platform[]>(PLATFORMS)
+
+  // Keep medicines in sync if the live database updates
+  useEffect(() => {
+    if (liveMedicines) {
+      setMedicines(liveMedicines)
+    }
+  }, [liveMedicines])
 
   // Fetch live membership pricing on app load
   useEffect(() => {
