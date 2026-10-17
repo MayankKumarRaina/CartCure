@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useMemo, ReactNode } from "react"
 import { createClient } from "@supabase/supabase-js"
-import { Medicine, PLATFORMS, Platform, MEDICINES, PlatformId } from "@/lib/data"
+import { Medicine, PLATFORMS, Platform, MEDICINES, PlatformId, Category } from "@/lib/data"
 
 // Initialize Supabase
 const supabaseUrl = "https://sofowqilxmplbfownnqh.supabase.co"
@@ -69,7 +69,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
             const medPrices = pricesData.filter(p => p.medicine_id === med.id)
             const pricesRecord: Partial<Record<PlatformId, number>> = {}
             
-            // Map Supabase platform names to local PlatformIds
             medPrices.forEach(p => {
               let pid: PlatformId | null = null
               const pName = p.platform_name?.toLowerCase() || ''
@@ -83,16 +82,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
               if (pid) pricesRecord[pid] = p.selling_price
             })
 
+            // Aligned with the exact database column names
             return {
               id: med.id,
-              name: med.brand_name || med.name || 'Unknown',
+              name: med.brand_name || 'Unknown',
               mrp: med.mrp || 0,
-              pack: med.pack_size || med.pack || '',
-              salt: med.salt_composition || med.salt || '',
+              pack: med.pack_size || '',
+              salt: med.salt_composition || '',
               manufacturer: med.manufacturer || '',
-              categories: med.categories || ['Vitamins & Supplements'],
-              rxRequired: med.rx_required || false,
-              // Fallback to MRP if a platform price is missing during a scrape
+              categories: med.category ? [med.category as Category] : ['Vitamins & Supplements'],
+              rxRequired: med.is_rx_required || false,
               prices: {
                 tata1mg: pricesRecord['tata1mg'] ?? med.mrp,
                 pharmeasy: pricesRecord['pharmeasy'] ?? med.mrp,
