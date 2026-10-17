@@ -67,8 +67,10 @@ export function quoteFor(platform: Platform, lines: CartLine[]): PlatformQuote {
   }
 }
 
-export function quoteAll(lines: CartLine[]): PlatformQuote[] {
-  return PLATFORMS.map((p) => quoteFor(p, lines))
+// Replace your existing quoteAll function with this:
+
+export function quoteAll(lines: CartLine[], platforms: Platform[] = PLATFORMS): PlatformQuote[] {
+  return platforms.map((p) => quoteFor(p, lines))
 }
 
 export function bestOption(quotes: PlatformQuote[], includeMemberships: boolean): BestOption | null {

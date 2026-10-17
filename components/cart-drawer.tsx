@@ -16,7 +16,8 @@ interface CartDrawerProps {
 }
 
 export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
-  const { items, increment, decrement, medicines } = useCart()
+  // 1. Extract live platforms from useCart
+  const { items, increment, decrement, medicines, platforms } = useCart()
   const [viewMode, setViewMode] = useState<'standard' | 'membership'>('standard')
   const [includeMembership, setIncludeMembership] = useState(false)
   const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(null)
@@ -26,7 +27,9 @@ export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
   
   // Core pricing engine
   const cartLines = useMemo(() => toCartLines(items, medicines), [items, medicines])
-  const quotes = useMemo(() => quoteAll(cartLines), [cartLines])
+  
+  // 2. Pass platforms into quoteAll so the matrix uses auto-detected Supabase memberships
+  const quotes = useMemo(() => quoteAll(cartLines, platforms), [cartLines, platforms])
   const sortedQuotes = [...quotes].sort((a, b) => a.standardTotal - b.standardTotal)
   
   const mrpTotal = cartLines.reduce((sum, line) => sum + (line.medicine.mrp * line.quantity), 0)

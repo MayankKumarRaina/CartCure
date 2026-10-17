@@ -7,13 +7,16 @@ import { useCart } from '@/components/cart-provider'
 import { bestOption, formatINR, quoteAll, toCartLines } from '@/lib/pricing'
 
 export function BasketBar() {
-  const { items, setOpen, isOpen, medicines } = useCart()
+  // 1. Extract live platforms from useCart
+  const { items, setOpen, isOpen, medicines, platforms } = useCart()
   
   // Accurately count total quantities across the dictionary
   const actualTotalItems = Object.values(items).reduce((sum, qty) => sum + (qty || 0), 0)
   
   const cartLines = useMemo(() => toCartLines(items, medicines), [items, medicines])
-  const quotes = useMemo(() => quoteAll(cartLines), [cartLines])
+  
+  // 2. Pass platforms into quoteAll so it uses Supabase auto-detected memberships
+  const quotes = useMemo(() => quoteAll(cartLines, platforms), [cartLines, platforms])
   const best = useMemo(() => bestOption(quotes, false), [quotes])
 
   return (
