@@ -16,7 +16,7 @@ export function SiteHeader() {
           <Logo />
         </a>
         <div className="flex items-center gap-2">
-          <span className="whitespace-nowrap rounded-full border px-2 py-1 text-[10px] font-medium text-muted-foreground">{dataSource === 'islive' ? 'Live DB' : 'Demo Data'}</span>
+          <span className="whitespace-nowrap rounded-full border px-2 py-1 text-[10px] font-medium text-muted-foreground">{isLive ? 'Live DB' : 'Demo Data'}</span>
           <InstallChip />
           <button
             type="button"
