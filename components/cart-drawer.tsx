@@ -18,10 +18,25 @@ export function CartDrawer() {
   const { items, isOpen, setOpen, totalItems, medicines } = useCart()
   const isDesktop = useMediaQuery('(min-width: 768px)')
   const [compareMemberships, setCompareMemberships] = useState(false)
+  const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null)
 
   const lines = useMemo(() => toCartLines(items, medicines), [items, medicines])
   const quotes = useMemo(() => quoteAll(lines), [lines])
   const best = useMemo(() => bestOption(quotes, compareMemberships), [quotes, compareMemberships])
+  const cheapestPlatform = useMemo(
+    () => quotes.reduce((a, b) => (b.standardTotal < a.standardTotal ? b : a), quotes[0]),
+    [quotes],
+  )
+  const activePlatform = selectedPlatform ?? cheapestPlatform?.platform.name ?? null
+  const activeQuote = quotes.find((quote) => quote.platform.name === activePlatform)
+  const activeWithMembership = Boolean(
+    compareMemberships && activeQuote?.worthIt && activeQuote.memberEffectivePerRefill < activeQuote.standardTotal,
+  )
+  const activeCost = activeQuote
+    ? activeWithMembership ? activeQuote.memberEffectivePerRefill : activeQuote.standardTotal
+    : 0
+  const worstTotal = Math.max(...quotes.map((quote) => quote.standardTotal))
+  const activeSavings = Math.max(0, worstTotal - activeCost)
   const bestMembership = useMemo(
     () => quotes.reduce((a, b) => (b.periodNetSavings > a.periodNetSavings ? b : a), quotes[0]),
     [quotes],
@@ -95,7 +110,12 @@ export function CartDrawer() {
                       exit={{ opacity: 0, y: -6 }}
                       transition={spring}
                     >
-                      <StandardComparison quotes={quotes} bestId={best?.platform.id ?? null} />
+                      <StandardComparison
+                        quotes={quotes}
+                        bestId={cheapestPlatform?.platform.id ?? null}
+                        activePlatform={activePlatform}
+                        onSelect={setSelectedPlatform}
+                      />
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -107,37 +127,37 @@ export function CartDrawer() {
               </div>
             </div>
 
-            {best && (
+            {activeQuote && (
               <div className="border-t bg-background px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
                 <div className="mb-2.5 flex items-baseline justify-between text-xs text-muted-foreground">
                   <span>
-                    {best.withMembership
-                      ? `Effective per refill with ${best.platform.membership.name}`
-                      : 'Best total today'}
+                    {activeWithMembership
+                      ? `Effective per refill with ${activeQuote.platform.membership.name}`
+                      : 'Basket total today'}
                   </span>
                   <motion.span
-                    key={`${best.platform.id}-${best.cost}`}
+                    key={`${activeQuote.platform.id}-${activeCost}`}
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="text-lg font-semibold tabular-nums text-foreground"
                   >
-                    {formatINR(best.cost)}
+                    {formatINR(activeCost)}
                   </motion.span>
                 </div>
                 <motion.a
                   whileTap={{ scale: 0.98 }}
-                  href={best.platform.searchUrl(lines[0].medicine.name.split(' ').slice(0, 2).join(' '))}
+                  href={activeQuote.platform.searchUrl(lines[0].medicine.name.split(' ').slice(0, 2).join(' '))}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground shadow-sm shadow-primary/25 transition-colors hover:bg-primary/90 sm:text-sm"
                 >
                   <span className="truncate">
-                    Proceed to {best.platform.name}
-                    {best.withMembership ? ` + ${best.platform.membership.name}` : ''}
-                    {best.savings > 0 && (
+                    Proceed to {activeQuote.platform.name}
+                    {activeWithMembership ? ` + ${activeQuote.platform.membership.name}` : ''}
+                    {activeSavings > 0 && (
                       <span className="font-medium text-primary-foreground/85">
                         {' '}
-                        (Save {formatINR(best.savings)})
+                        (Save {formatINR(activeSavings)})
                       </span>
                     )}
                   </span>
@@ -256,7 +276,17 @@ function ModeToggle({ checked, onChange }: { checked: boolean; onChange: (v: boo
   )
 }
 
-function StandardComparison({ quotes, bestId }: { quotes: PlatformQuote[]; bestId: string | null }) {
+function StandardComparison({
+  quotes,
+  bestId,
+  activePlatform,
+  onSelect,
+}: {
+  quotes: PlatformQuote[]
+  bestId: string | null
+  activePlatform: string | null
+  onSelect: (platform: string) => void
+}) {
   const worst = Math.max(...quotes.map((q) => q.standardTotal))
   const sorted = [...quotes].sort((a, b) => a.standardTotal - b.standardTotal)
 
@@ -268,17 +298,25 @@ function StandardComparison({ quotes, bestId }: { quotes: PlatformQuote[]; bestI
       <ul className="flex flex-col gap-2">
         {sorted.map((q) => {
           const isBest = q.platform.id === bestId
+          const isActive = q.platform.name === activePlatform
           return (
             <motion.li
               layout
               key={q.platform.id}
               transition={spring}
-              className={cn(
-                'flex items-center justify-between gap-3 rounded-xl border bg-background p-3',
-                isBest && 'border-success/40 bg-success-soft',
-              )}
+              className="list-none"
             >
-              <div className="flex flex-col gap-0.5">
+              <button
+                type="button"
+                onClick={() => onSelect(q.platform.name)}
+                aria-pressed={isActive}
+                className={cn(
+                  'flex w-full items-center justify-between gap-3 rounded-xl border bg-background p-3 text-left transition-colors',
+                  isBest && 'border-success/40 bg-success-soft',
+                  isActive && 'ring-2 ring-primary ring-offset-1',
+                )}
+              >
+                <div className="flex flex-col gap-0.5">
                 <span className="flex items-center gap-2 text-sm font-semibold">
                   {q.platform.name}
                   {isBest && (
@@ -291,8 +329,8 @@ function StandardComparison({ quotes, bestId }: { quotes: PlatformQuote[]; bestI
                   {formatINR(q.subtotal)} +{' '}
                   {q.delivery === 0 ? 'free delivery' : `${formatINR(q.delivery)} delivery`}
                 </span>
-              </div>
-              <div className="flex flex-col items-end">
+                </div>
+                <div className="flex flex-col items-end">
                 <span className={cn('text-base font-semibold tabular-nums', isBest && 'text-success')}>
                   {formatINR(q.standardTotal)}
                 </span>
@@ -301,7 +339,8 @@ function StandardComparison({ quotes, bestId }: { quotes: PlatformQuote[]; bestI
                     Save {formatINR(worst - q.standardTotal)}
                   </span>
                 )}
-              </div>
+                </div>
+              </button>
             </motion.li>
           )
         })}
