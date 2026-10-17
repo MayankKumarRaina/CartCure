@@ -64,32 +64,50 @@ const ROWS: Row[] = [
 export function MembershipMatrix({
   quotes,
   bestPlatform,
+  selectedPlatform,
+  onSelectPlatform
 }: {
   quotes: PlatformQuote[]
   bestPlatform: PlatformId | null
+  selectedPlatform: PlatformId | null
+  onSelectPlatform: (id: PlatformId) => void
 }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="overflow-x-auto rounded-2xl border">
-        <table className="w-full min-w-[340px] border-collapse text-xs">
+        <table className="w-full min-w-[400px] border-collapse text-xs">
           <caption className="sr-only">Membership comparison across platforms for your basket</caption>
           <thead>
             <tr className="bg-card">
-              <th scope="col" className="px-3 py-2.5 text-left font-medium text-muted-foreground">
+              <th scope="col" className="px-3 py-2.5 text-left font-medium text-muted-foreground border-b-2 border-transparent">
                 <span className="sr-only">Metric</span>
               </th>
               {quotes.map((q) => {
-                const best = q.platform.id === bestPlatform
+                const isBest = q.platform.id === bestPlatform
+                const isSelected = q.platform.id === selectedPlatform
                 return (
                   <th
                     key={q.platform.id}
                     scope="col"
-                    className={cn('px-2 py-2.5 text-right font-semibold', best && 'bg-success-soft text-success')}
+                    onClick={() => onSelectPlatform(q.platform.id)}
+                    className={cn(
+                      'px-2 py-2.5 text-right font-semibold cursor-pointer transition-colors border-b-2',
+                      isSelected ? 'bg-primary/10 border-primary text-primary' : 'border-transparent hover:bg-muted',
+                      isBest && !isSelected && 'bg-success-soft border-success/20 text-success'
+                    )}
                   >
                     <span className="flex flex-col items-end gap-0.5">
-                      {best && (
-                        <span className="rounded-full bg-success px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-success-foreground">
+                      {isBest && (
+                        <span className={cn(
+                          "rounded-full px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide",
+                          isSelected ? "bg-primary text-primary-foreground" : "bg-success text-success-foreground"
+                        )}>
                           Best
+                        </span>
+                      )}
+                      {isSelected && !isBest && (
+                        <span className="rounded-full bg-primary px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-primary-foreground">
+                          Selected
                         </span>
                       )}
                       {q.platform.shortName}
@@ -111,18 +129,25 @@ export function MembershipMatrix({
                 >
                   {row.label}
                 </th>
-                {quotes.map((q) => (
-                  <td
-                    key={q.platform.id}
-                    className={cn(
-                      'px-2 py-2 text-right tabular-nums',
-                      row.emphasis ? 'font-semibold' : 'font-medium',
-                      q.platform.id === bestPlatform && 'bg-success-soft/70',
-                    )}
-                  >
-                    <span className="inline-flex justify-end">{row.render(q)}</span>
-                  </td>
-                ))}
+                {quotes.map((q) => {
+                  const isBest = q.platform.id === bestPlatform
+                  const isSelected = q.platform.id === selectedPlatform
+                  
+                  return (
+                    <td
+                      key={q.platform.id}
+                      onClick={() => onSelectPlatform(q.platform.id)}
+                      className={cn(
+                        'px-2 py-2 text-right tabular-nums cursor-pointer transition-colors',
+                        row.emphasis ? 'font-semibold' : 'font-medium',
+                        isSelected ? 'bg-primary/5' : 'hover:bg-muted/50',
+                        isBest && !isSelected && 'bg-success-soft/30',
+                      )}
+                    >
+                      <span className="inline-flex justify-end">{row.render(q)}</span>
+                    </td>
+                  )
+                })}
               </tr>
             ))}
           </tbody>

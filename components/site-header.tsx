@@ -1,5 +1,7 @@
 'use client'
-
+import { useTheme } from "next-themes"
+import { Moon, Sun } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { AnimatePresence, motion } from 'framer-motion'
 import { ShoppingBag } from 'lucide-react'
 import { Logo } from '@/components/logo'
@@ -8,6 +10,7 @@ import { useCart } from '@/components/cart-provider'
 
 export function SiteHeader() {
   const { totalItems, setOpen, isLive } = useCart()
+  const { theme, setTheme } = useTheme()
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur-md">
@@ -16,8 +19,23 @@ export function SiteHeader() {
           <Logo />
         </a>
         <div className="flex items-center gap-2">
-          <span className="whitespace-nowrap rounded-full border px-2 py-1 text-[10px] font-medium text-muted-foreground">{isLive ? 'Live DB' : 'Demo Data'}</span>
+          <span className="whitespace-nowrap rounded-full border px-2 py-1 text-[10px] font-medium text-muted-foreground">
+            {isLive ? 'Live DB' : 'Demo Data'}
+          </span>
           <InstallChip />
+          
+          {/* Dark Mode Toggle */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            className="h-8 w-8 rounded-full"
+          >
+            <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+            <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+            <span className="sr-only">Toggle theme</span>
+          </Button>
+
           <button
             type="button"
             onClick={() => setOpen(true)}

@@ -31,7 +31,12 @@ export function CartDrawer() {
 
   return (
     <Sheet open={isOpen} onOpenChange={setOpen}>
-      <SheetContent className="w-full sm:max-w-md flex flex-col p-0">
+      {/* 
+        Updated SheetContent:
+        - w-full !max-w-full (Makes it 100% width on mobile, leaving no space)
+        - md:!max-w-3xl (Allows it to expand beautifully on tablets and desktops for the 6 columns)
+      */}
+      <SheetContent className="w-full !max-w-full md:!max-w-3xl flex flex-col p-0">
         <SheetHeader className="p-4 border-b">
           <SheetTitle className="text-left flex items-center justify-between">
             <span>Your basket</span>
@@ -150,7 +155,13 @@ export function CartDrawer() {
                 </div>
               ) : (
                 <div className="pt-2">
-                   <MembershipMatrix quotes={quotes} bestPlatform={best?.platform.id ?? null} />
+                   {/* Passed the new selection props to the matrix */}
+                   <MembershipMatrix 
+                     quotes={quotes} 
+                     bestPlatform={best?.platform.id ?? null}
+                     selectedPlatform={activeQuote?.platform.id ?? null}
+                     onSelectPlatform={setSelectedPlatformId} 
+                   />
                 </div>
               )}
             </>
