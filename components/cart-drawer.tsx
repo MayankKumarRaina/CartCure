@@ -1,371 +1,265 @@
-'use client'
+"use client"
 
-import { useMemo, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowUpRight, Minus, Pill, Plus, ShoppingBag, Trash2 } from 'lucide-react'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Switch } from '@/components/ui/switch'
-import { useCart } from '@/components/cart-provider'
-import { MembershipMatrix } from '@/components/membership-matrix'
-import { BreakEvenCard } from '@/components/break-even-card'
-import { useMediaQuery } from '@/hooks/use-media-query'
-import { bestOption, formatINR, quoteAll, toCartLines, type CartLine, type PlatformQuote } from '@/lib/pricing'
-import { cn } from '@/lib/utils'
+import { useState } from "react"
+import { useCart } from "@/components/cart-provider"
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
+import { Trash2, Plus, Minus, ExternalLink, Check } from "lucide-react"
 
-const spring = { type: 'spring', stiffness: 420, damping: 34 } as const
+interface CartDrawerProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}
 
-export function CartDrawer() {
-  const { items, isOpen, setOpen, totalItems, medicines } = useCart()
-  const isDesktop = useMediaQuery('(min-width: 768px)')
-  const [compareMemberships, setCompareMemberships] = useState(false)
+// Baseline platform delivery fees and standard thresholds
+const PLATFORM_CONFIG: Record<string, { deliveryFee: number; minFreeDelivery: number }> = {
+  "Tata 1mg": { deliveryFee: 50, minFreeDelivery: 500 },
+  "PharmEasy": { deliveryFee: 49, minFreeDelivery: 499 },
+  "Netmeds": { deliveryFee: 49, minFreeDelivery: 500 },
+  "Apollo Pharmacy": { deliveryFee: 40, minFreeDelivery: 400 },
+  "Truemeds": { deliveryFee: 50, minFreeDelivery: 500 },
+  "MedPlus": { deliveryFee: 35, minFreeDelivery: 350 },
+}
+
+export function CartDrawer({ open, onOpenChange }: CartDrawerProps) {
+  const { items, removeItem, updateQuantity } = useCart()
+  const [includeMembership, setIncludeMembership] = useState(false)
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null)
 
-  const lines = useMemo(() => toCartLines(items, medicines), [items, medicines])
-  const quotes = useMemo(() => quoteAll(lines), [lines])
-  const best = useMemo(() => bestOption(quotes, compareMemberships), [quotes, compareMemberships])
-  const cheapestPlatform = useMemo(
-    () => quotes.reduce((a, b) => (b.standardTotal < a.standardTotal ? b : a), quotes[0]),
-    [quotes],
+  // Collect all unique platforms present across all items in basket
+  const platformNames = Array.from(
+    new Set(
+      items.flatMap((item) =>
+        (item.medicine.pharmacy_prices || []).map((p) => p.platform_name)
+      )
+    )
   )
-  const activePlatform = selectedPlatform ?? cheapestPlatform?.platform.name ?? null
-  const activeQuote = quotes.find((quote) => quote.platform.name === activePlatform)
-  const activeWithMembership = Boolean(
-    compareMemberships && activeQuote?.worthIt && activeQuote.memberEffectivePerRefill < activeQuote.standardTotal,
-  )
-  const activeCost = activeQuote
-    ? activeWithMembership ? activeQuote.memberEffectivePerRefill : activeQuote.standardTotal
-    : 0
-  const worstTotal = Math.max(...quotes.map((quote) => quote.standardTotal))
-  const activeSavings = Math.max(0, worstTotal - activeCost)
-  const bestMembership = useMemo(
-    () => quotes.reduce((a, b) => (b.periodNetSavings > a.periodNetSavings ? b : a), quotes[0]),
-    [quotes],
-  )
+
+  // Calculate totals per platform
+  const platformTotals = platformNames.map((platform) => {
+    let medicineTotal = 0
+    let mrpTotal = 0
+    let primaryCheckoutUrl = ""
+
+    items.forEach((item) => {
+      const match = item.medicine.pharmacy_prices?.find(
+        (p) => p.platform_name === platform
+      )
+      const unitPrice = match?.selling_price ?? item.medicine.mrp
+      medicineTotal += unitPrice * item.quantity
+      mrpTotal += item.medicine.mrp * item.quantity
+
+      if (!primaryCheckoutUrl && match?.product_url) {
+        primaryCheckoutUrl = match.product_url
+      }
+    })
+
+    const config = PLATFORM_CONFIG[platform] || { deliveryFee: 50, minFreeDelivery: 500 }
+    const deliveryFee = medicineTotal >= config.minFreeDelivery ? 0 : config.deliveryFee
+    const totalWithoutPlan = medicineTotal + deliveryFee
+
+    return {
+      name: platform,
+      medicineTotal,
+      mrpTotal,
+      deliveryFee,
+      total: totalWithoutPlan,
+      savings: mrpTotal - totalWithoutPlan,
+      checkoutUrl: primaryCheckoutUrl || "#",
+    }
+  })
+
+  // Sort by lowest price first
+  platformTotals.sort((a, b) => a.total - b.total)
+  const cheapestPlatform = platformTotals[0]
+
+  // Active choice: user's manual selection, fallback to cheapest
+  const activePlatform =
+    platformTotals.find((p) => p.name === selectedPlatform) || cheapestPlatform
 
   return (
-    <Sheet open={isOpen} onOpenChange={setOpen}>
-      <SheetContent
-        side={isDesktop ? 'right' : 'bottom'}
-        className={cn(
-          'gap-0 p-0',
-          'overflow-x-hidden',
-          'data-[side=right]:w-full data-[side=right]:sm:max-w-lg',
-          'data-[side=bottom]:max-h-[92dvh] data-[side=bottom]:rounded-t-3xl',
-        )}
-      >
-        {!isDesktop && (
-          <div className="flex justify-center pt-2.5" aria-hidden="true">
-            <span className="h-1 w-10 rounded-full bg-border" />
-          </div>
-        )}
-        <SheetHeader className="border-b px-5 pb-4 pt-4 md:pt-5">
-          <SheetTitle className="flex items-center gap-2 text-base font-semibold">
-            Your basket
-            {totalItems > 0 && (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">
-                {totalItems} {totalItems === 1 ? 'item' : 'items'}
-              </span>
-            )}
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full sm:max-w-md flex flex-col p-0">
+        <SheetHeader className="p-4 border-b">
+          <SheetTitle className="text-left flex items-center justify-between">
+            <span>Your basket</span>
+            <span className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-600 px-2.5 py-1 rounded-full font-medium">
+              {items.reduce((acc, i) => acc + i.quantity, 0)} items
+            </span>
           </SheetTitle>
-          <SheetDescription className="text-xs">
-            Compare the full basket across platforms and memberships.
-          </SheetDescription>
         </SheetHeader>
 
-        {lines.length === 0 ? (
-          <EmptyState onBrowse={() => setOpen(false)} />
-        ) : (
-          <>
-            <div className="flex-1 overflow-y-auto overscroll-contain">
-              <div className="flex flex-col gap-5 px-5 py-5">
-                <LineItems lines={lines} />
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {items.length === 0 ? (
+            <div className="py-12 text-center text-slate-500 text-sm">
+              Your basket is empty. Add medicines to compare carts.
+            </div>
+          ) : (
+            <>
+              {/* Basket Items List */}
+              <div className="space-y-3">
+                {items.map((item) => (
+                  <div
+                    key={item.medicine.id}
+                    className="p-3 border rounded-xl flex items-center justify-between bg-white dark:bg-slate-900 shadow-sm"
+                  >
+                    <div className="flex-1 pr-2">
+                      <p className="font-semibold text-sm leading-tight text-slate-900 dark:text-slate-100">
+                        {item.medicine.brand_name}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {item.medicine.pack_size}
+                      </p>
+                      <p className="text-xs font-medium text-emerald-600 mt-1">
+                        MRP: ₹{item.medicine.mrp}
+                      </p>
+                    </div>
 
-                <ModeToggle checked={compareMemberships} onChange={setCompareMemberships} />
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center border rounded-lg bg-slate-50 dark:bg-slate-800">
+                        <button
+                          onClick={() => updateQuantity(item.medicine.id, item.quantity - 1)}
+                          className="p-1.5 hover:text-red-500 transition"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="text-xs font-semibold px-2">
+                          {item.quantity}
+                        </span>
+                        <button
+                          onClick={() => updateQuantity(item.medicine.id, item.quantity + 1)}
+                          className="p-1.5 hover:text-emerald-500 transition"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
 
-                <AnimatePresence mode="wait" initial={false}>
-                  {compareMemberships ? (
-                    <motion.div
-                      key="memberships"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      transition={spring}
-                      className="flex flex-col gap-4"
-                    >
-                      <MembershipMatrix
-                        quotes={quotes}
-                        bestPlatform={best?.platform.id ?? null}
-                      />
-                      <BreakEvenCard
-                        key={bestMembership.platform.id}
-                        quotes={quotes}
-                        defaultPlatform={bestMembership.platform.id}
-                      />
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="standard"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      transition={spring}
-                    >
-                      <StandardComparison
-                        quotes={quotes}
-                        bestId={cheapestPlatform?.platform.id ?? null}
-                        activePlatform={activePlatform}
-                        onSelect={setSelectedPlatform}
-                      />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  Prices and membership terms are indicative and may change on each platform. A valid
-                  prescription is required for Rx medicines.
-                </p>
+                      <button
+                        onClick={() => removeItem(item.medicine.id)}
+                        className="text-slate-400 hover:text-red-500 transition p-1"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
+
+              {/* Membership Switcher */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-slate-800 dark:text-slate-200">
+                    Include membership savings
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Factor in 1mg Care Plan & PharmEasy Plus
+                  </p>
+                </div>
+                <Switch
+                  checked={includeMembership}
+                  onCheckedChange={setIncludeMembership}
+                />
+              </div>
+
+              {/* Select Platform Header */}
+              <div className="pt-2">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                    Choose Store
+                  </h4>
+                  <span className="text-[11px] text-slate-400">
+                    Tap any platform to switch
+                  </span>
+                </div>
+
+                {/* Clickable Platform Selection Cards */}
+                <div className="space-y-2">
+                  {platformTotals.map((platform) => {
+                    const isSelected = activePlatform?.name === platform.name
+                    const isCheapest = cheapestPlatform?.name === platform.name
+
+                    return (
+                      <div
+                        key={platform.name}
+                        onClick={() => setSelectedPlatform(platform.name)}
+                        className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
+                          isSelected
+                            ? "border-emerald-600 bg-emerald-50/40 dark:bg-emerald-950/20 ring-1 ring-emerald-600 shadow-sm"
+                            : "border-slate-200 hover:border-slate-300 bg-white dark:bg-slate-900"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className={`w-4 h-4 rounded-full border flex items-center justify-center transition ${
+                              isSelected
+                                ? "border-emerald-600 bg-emerald-600 text-white"
+                                : "border-slate-300 bg-white"
+                            }`}
+                          >
+                            {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          </div>
+
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                {platform.name}
+                              </span>
+                              {isCheapest && (
+                                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                                  CHEAPEST
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs text-slate-500">
+                              ₹{platform.medicineTotal} + ₹{platform.deliveryFee} delivery
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <p className="text-base font-bold text-slate-900 dark:text-slate-100">
+                            ₹{platform.total}
+                          </p>
+                          {platform.savings > 0 && (
+                            <p className="text-[11px] font-semibold text-emerald-600">
+                              Save ₹{platform.savings}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Dynamic Outbound Checkout Footer */}
+        {items.length > 0 && activePlatform && (
+          <div className="p-4 border-t bg-white dark:bg-slate-900 space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-500 font-medium">Selected Store:</span>
+              <span className="font-bold text-slate-900 dark:text-slate-100">
+                {activePlatform.name} (₹{activePlatform.total})
+              </span>
             </div>
 
-            {activeQuote && (
-              <div className="border-t bg-background px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
-                <div className="mb-2.5 flex items-baseline justify-between text-xs text-muted-foreground">
-                  <span>
-                    {activeWithMembership
-                      ? `Effective per refill with ${activeQuote.platform.membership.name}`
-                      : 'Basket total today'}
-                  </span>
-                  <motion.span
-                    key={`${activeQuote.platform.id}-${activeCost}`}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="text-lg font-semibold tabular-nums text-foreground"
-                  >
-                    {formatINR(activeCost)}
-                  </motion.span>
-                </div>
-                <motion.a
-                  whileTap={{ scale: 0.98 }}
-                  href={activeQuote.platform.searchUrl(lines[0].medicine.name.split(' ').slice(0, 2).join(' '))}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground shadow-sm shadow-primary/25 transition-colors hover:bg-primary/90 sm:text-sm"
-                >
-                  <span className="truncate">
-                    Proceed to {activeQuote.platform.name}
-                    {activeWithMembership ? ` + ${activeQuote.platform.membership.name}` : ''}
-                    {activeSavings > 0 && (
-                      <span className="font-medium text-primary-foreground/85">
-                        {' '}
-                        (Save {formatINR(activeSavings)})
-                      </span>
-                    )}
-                  </span>
-                  <ArrowUpRight className="size-4 shrink-0" aria-hidden="true" />
-                  <span className="sr-only">(opens in a new tab)</span>
-                </motion.a>
-              </div>
-            )}
-          </>
+            <Button
+              className="w-full h-12 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2 rounded-xl"
+              onClick={() => {
+                if (activePlatform.checkoutUrl && activePlatform.checkoutUrl !== "#") {
+                  window.open(activePlatform.checkoutUrl, "_blank")
+                }
+              }}
+            >
+              <span>Proceed to {activePlatform.name}</span>
+              <ExternalLink className="w-4 h-4" />
+            </Button>
+          </div>
         )}
       </SheetContent>
     </Sheet>
-  )
-}
-
-function LineItems({ lines }: { lines: CartLine[] }) {
-  const { increment, decrement, remove } = useCart()
-
-  return (
-    <ul className="flex flex-col gap-2" aria-label="Medicines in basket">
-      <AnimatePresence initial={false}>
-        {lines.map(({ medicine, qty }) => {
-          const low = Math.min(...Object.values(medicine.prices))
-          return (
-            <motion.li
-              key={medicine.id}
-              layout
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={spring}
-              className="overflow-hidden"
-            >
-              <div className="flex flex-col gap-2 rounded-xl border bg-card p-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
-                    <Pill className="size-4" aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium leading-snug">{medicine.name}</p>
-                    <p className="truncate text-[11px] text-muted-foreground">{medicine.pack}</p>
-                  </div>
-                  <button type="button" onClick={() => remove(medicine.id)} aria-label={`Remove ${medicine.name}`} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive">
-                    <Trash2 className="size-4" aria-hidden="true" />
-                  </button>
-                </div>
-                <div className="flex items-center justify-between pl-11">
-                  <span className="text-xs font-medium tabular-nums text-muted-foreground">From {formatINR(low)}</span>
-                  <div className="flex items-center rounded-lg border bg-background">
-                  <button
-                    type="button"
-                    onClick={() => decrement(medicine.id)}
-                    aria-label={`Decrease ${medicine.name} quantity`}
-                    className="flex size-8 items-center justify-center text-muted-foreground hover:text-foreground"
-                  >
-                    <Minus className="size-3.5" aria-hidden="true" />
-                  </button>
-                  <span className="w-6 text-center text-sm font-semibold tabular-nums">{qty}</span>
-                  <button
-                    type="button"
-                    onClick={() => increment(medicine.id)}
-                    aria-label={`Increase ${medicine.name} quantity`}
-                    className="flex size-8 items-center justify-center text-primary"
-                  >
-                    <Plus className="size-3.5" aria-hidden="true" />
-                  </button>
-                </div>
-                </div>
-              </div>
-            </motion.li>
-          )
-        })}
-      </AnimatePresence>
-    </ul>
-  )
-}
-
-function ModeToggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <div className="flex flex-col gap-2 rounded-2xl border bg-card p-1.5">
-      <div className="relative grid grid-cols-2" role="radiogroup" aria-label="Pricing mode">
-        {[
-          { value: false, title: 'Standard One-Time Buy', sub: 'Pay as you go' },
-          { value: true, title: 'Compare with Memberships', sub: '1mg Care Plan / PharmEasy Plus' },
-        ].map((opt) => {
-          const active = checked === opt.value
-          return (
-            <button
-              key={String(opt.value)}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              onClick={() => onChange(opt.value)}
-              className="relative isolate flex flex-col items-start gap-0.5 rounded-xl px-3 py-2.5 text-left"
-            >
-              {active && (
-                <motion.span
-                  layoutId="mode-pill"
-                  className="absolute inset-0 -z-10 rounded-xl border bg-background shadow-sm"
-                  transition={{ type: 'spring', stiffness: 500, damping: 36 }}
-                />
-              )}
-              <span className={cn('text-[13px] font-semibold', active ? 'text-foreground' : 'text-muted-foreground')}>
-                {opt.title}
-              </span>
-              <span className="text-[11px] leading-tight text-muted-foreground">{opt.sub}</span>
-            </button>
-          )
-        })}
-      </div>
-      <label className="flex cursor-pointer items-center justify-between gap-3 px-3 pb-1.5 pt-1 text-xs text-muted-foreground">
-        <span>Include membership savings in the best price</span>
-        <Switch checked={checked} onCheckedChange={(v) => onChange(Boolean(v))} aria-label="Compare with memberships" />
-      </label>
-    </div>
-  )
-}
-
-function StandardComparison({
-  quotes,
-  bestId,
-  activePlatform,
-  onSelect,
-}: {
-  quotes: PlatformQuote[]
-  bestId: string | null
-  activePlatform: string | null
-  onSelect: (platform: string) => void
-}) {
-  const worst = Math.max(...quotes.map((q) => q.standardTotal))
-  const sorted = [...quotes].sort((a, b) => a.standardTotal - b.standardTotal)
-
-  return (
-    <section aria-labelledby="standard-heading" className="flex flex-col gap-2">
-      <h3 id="standard-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Basket total by platform
-      </h3>
-      <ul className="flex flex-col gap-2">
-        {sorted.map((q) => {
-          const isBest = q.platform.id === bestId
-          const isActive = q.platform.name === activePlatform
-          return (
-            <motion.li
-              layout
-              key={q.platform.id}
-              transition={spring}
-              className="list-none"
-            >
-              <button
-                type="button"
-                onClick={() => onSelect(q.platform.name)}
-                aria-pressed={isActive}
-                className={cn(
-                  'flex w-full items-center justify-between gap-3 rounded-xl border bg-background p-3 text-left transition-colors',
-                  isBest && 'border-success/40 bg-success-soft',
-                  isActive && 'ring-2 ring-primary ring-offset-1',
-                )}
-              >
-                <div className="flex flex-col gap-0.5">
-                <span className="flex items-center gap-2 text-sm font-semibold">
-                  {q.platform.name}
-                  {isBest && (
-                    <span className="rounded-full bg-success px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-success-foreground">
-                      Cheapest
-                    </span>
-                  )}
-                </span>
-                <span className="text-[11px] text-muted-foreground tabular-nums">
-                  {formatINR(q.subtotal)} +{' '}
-                  {q.delivery === 0 ? 'free delivery' : `${formatINR(q.delivery)} delivery`}
-                </span>
-                </div>
-                <div className="flex flex-col items-end">
-                <span className={cn('text-base font-semibold tabular-nums', isBest && 'text-success')}>
-                  {formatINR(q.standardTotal)}
-                </span>
-                {q.standardTotal < worst && (
-                  <span className="text-[11px] font-medium text-success tabular-nums">
-                    Save {formatINR(worst - q.standardTotal)}
-                  </span>
-                )}
-                </div>
-              </button>
-            </motion.li>
-          )
-        })}
-      </ul>
-    </section>
-  )
-}
-
-function EmptyState({ onBrowse }: { onBrowse: () => void }) {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center">
-      <span className="flex size-12 items-center justify-center rounded-2xl bg-primary-soft text-primary">
-        <ShoppingBag className="size-5" aria-hidden="true" />
-      </span>
-      <p className="text-sm font-semibold">Your basket is empty</p>
-      <p className="max-w-xs text-xs text-muted-foreground">
-        Add your monthly medicines to see which platform — and which membership — saves you the most.
-      </p>
-      <button
-        type="button"
-        onClick={onBrowse}
-        className="mt-1 h-9 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-      >
-        Browse medicines
-      </button>
-    </div>
   )
 }
