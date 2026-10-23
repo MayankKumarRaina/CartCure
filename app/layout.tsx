@@ -12,8 +12,9 @@ export const metadata: Metadata = {
   description: 'DawaDaam compares medicine prices across Tata 1mg, PharmEasy, Netmeds, Apollo, Truemeds, and MedPlus.',
   applicationName: 'DawaDaam',
   icons: {
-    icon: '/Dawadaam-logo.png',
-    apple: '/Dawadaam-logo.png',
+    icon: '/dawadaam-icon.png',
+    shortcut: '/dawadaam-icon.png',
+    apple: '/dawadaam-icon.png',
   },
 }
 
