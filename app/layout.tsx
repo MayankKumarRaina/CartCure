@@ -8,9 +8,13 @@ const geistSans = Geist({ subsets: ['latin'], variable: '--font-geist-sans' })
 const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono' })
 
 export const metadata: Metadata = {
-  title: 'CartCure — Compare medicine prices & membership savings in India',
-  description: 'Compare medicine prices across Tata 1mg, PharmEasy, Netmeds, Apollo, Truemeds, and MedPlus.',
-  applicationName: 'CartCure',
+  title: "DawaDaam — Compare Medicine Prices Across India's Top Pharmacies",
+  description: 'DawaDaam compares medicine prices across Tata 1mg, PharmEasy, Netmeds, Apollo, Truemeds, and MedPlus.',
+  applicationName: 'DawaDaam',
+  icons: {
+    icon: '/Dawadaam-logo.png',
+    apple: '/Dawadaam-logo.png',
+  },
 }
 
 export const viewport: Viewport = {

@@ -62,7 +62,7 @@ export function InstallChip() {
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Install CartCure</DialogTitle>
+            <DialogTitle>Install DawaDaam</DialogTitle>
             <DialogDescription>
               Get one-tap access to price comparisons, right from your home screen.
             </DialogDescription>

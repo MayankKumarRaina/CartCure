@@ -3,7 +3,7 @@ import glob
 import os
 
 print("Searching for raw dataset CSV...")
-csv_files = [f for f in glob.glob("**/*.csv", recursive=True) if "cartcure" not in f.lower() and "supabase" not in f.lower()]
+csv_files = [f for f in glob.glob("**/*.csv", recursive=True) if "dawadaam" not in f.lower() and "supabase" not in f.lower()]
 if not csv_files: raise FileNotFoundError("Raw CSV file not found.")
 
 raw_file = max(csv_files, key=os.path.getsize)
@@ -61,6 +61,6 @@ df = df.drop_duplicates(subset=["brand_name"])
 final_cols = ["brand_name", "salt_composition", "pack_size", "manufacturer", "category", "mrp", "is_rx_required"]
 df_final = df[final_cols]
 
-output_path = "cartcure_full.csv"
+output_path = "dawadaam_full.csv"
 df_final.to_csv(output_path, index=False, encoding="utf-8")
 print(f"Success! Generated {output_path} with {len(df_final):,} rows.")

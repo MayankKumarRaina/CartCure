@@ -14,7 +14,7 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur-md">
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-2 px-3 py-2 sm:gap-3 sm:px-4">
-        <a href="/" aria-label="CartCure home" className="rounded-md">
+        <a href="/" aria-label="DawaDaam home" className="rounded-md">
           <Logo isLive={isLive} />
         </a>
         <div className="flex items-center gap-2">

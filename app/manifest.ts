@@ -2,9 +2,9 @@ import type { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'CartCure — Medicine Price Compare',
-    short_name: 'CartCure',
-    description: 'Compare Indian online pharmacy prices and membership break-even.',
+    name: 'DawaDaam — Medicine Price Compare',
+    short_name: 'DawaDaam',
+    description: 'DawaDaam compares Indian online pharmacy prices and membership break-even.',
     start_url: '/',
     display: 'standalone',
     background_color: '#ffffff',

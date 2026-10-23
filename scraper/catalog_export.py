@@ -6,7 +6,7 @@ required before running at scale.
 
 Install: python -m pip install playwright
          python -m playwright install chromium
-Run:     python scraper/catalog_export.py --output cartcure_catalog.csv
+Run:     python scraper/catalog_export.py --output dawadaam_catalog.csv
 """
 
 from __future__ import annotations
@@ -169,7 +169,7 @@ def run(output: Path, max_pages: int, delay: float, limit: int | None) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=Path("cartcure_catalog.csv"))
+    parser.add_argument("--output", type=Path, default=Path("dawadaam_catalog.csv"))
     parser.add_argument("--max-pages", type=int, default=20)
     parser.add_argument("--delay", type=float, default=4.0, help="Seconds between page requests (minimum 2).")
     parser.add_argument("--limit", type=int, help="Optional maximum accepted rows; useful for a small trial run.")

@@ -206,7 +206,7 @@ function drawVendorBottle(
   return { x: mouthX, y: mouthY };
 }
 
-function drawCartCureBottle(
+function drawDawaDaamBottle(
   ctx: CanvasRenderingContext2D,
   x: number,
   baseY: number,
@@ -272,7 +272,7 @@ function drawCartCureBottle(
   ctx.stroke();
   ctx.shadowBlur = 0;
 
-  // CartCure's cross-and-wordmark badge, painted directly into the canvas.
+  // DawaDaam's cross-and-wordmark badge, painted directly into the canvas.
   const badgeW = width * 0.78;
   const badgeH = Math.max(24, height * 0.34);
   roundedRectPath(ctx, -badgeW / 2, -height * 0.02, badgeW, badgeH, 5);
@@ -288,7 +288,7 @@ function drawCartCureBottle(
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#d1fae5";
-  ctx.fillText("CartCure", 0, crossY + badgeH * 0.27, badgeW * 0.94);
+  ctx.fillText("DawaDaam", 0, crossY + badgeH * 0.27, badgeW * 0.94);
 
   if (finishing && finishProgress > 0.72) {
     const shine = clamp((finishProgress - 0.72) / 0.18);
@@ -751,7 +751,7 @@ function drawTransferStream(
   ctx.shadowBlur = 7;
   ctx.stroke();
 
-  // A few bright droplets move down the curve to the CartCure flask.
+  // A few bright droplets move down the curve to the DawaDaam flask.
   for (let i = 0; i < 4; i += 1) {
     const u = (time * 0.0011 + i * 0.24) % 1;
     const inv = 1 - u;
@@ -1014,7 +1014,7 @@ function drawScene(
   const targetFill = finishing
     ? lerp(0.79, 1, easeInOut(clamp((finishProgress - 0.04) / 0.73)))
     : lerp(0.06, 0.79, easeInOut(Math.min(1, elapsed / CYCLE_MS)));
-  drawCartCureBottle(ctx, targetX, baseY, targetW, targetH, targetFill, time, finishing, finishProgress, reducedMotion);
+  drawDawaDaamBottle(ctx, targetX, baseY, targetW, targetH, targetFill, time, finishing, finishProgress, reducedMotion);
 
   // The glove is redrawn above the active vial while the sleeve remains behind the glassware.
   drawScientistGlovedHand(ctx, scientistHand.x, scientistHand.y, finishing);
@@ -1187,7 +1187,7 @@ export function LoadingResearcher({
 
   return (
     <section
-      aria-label="CartCure medicine price research"
+      aria-label="DawaDaam medicine price research"
       style={{
         width: "100%",
         maxWidth: 680,
