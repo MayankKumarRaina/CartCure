@@ -40,7 +40,6 @@ export default function Page() {
             ))}
           </ul>
         </section>
-
         <MedicineSearch />
       </main>
       <BasketBar />

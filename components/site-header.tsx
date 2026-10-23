@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button"
 import { AnimatePresence, motion } from 'framer-motion'
 import { ShoppingBag } from 'lucide-react'
 import { Logo } from '@/components/logo'
-import { InstallChip } from '@/components/install-chip'
 import { useCart } from '@/components/cart-provider'
 
 export function SiteHeader() {
@@ -16,15 +15,9 @@ export function SiteHeader() {
     <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur-md">
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-2 px-3 py-2 sm:gap-3 sm:px-4">
         <a href="/" aria-label="CartCure home" className="rounded-md">
-          <Logo />
+          <Logo isLive={isLive} />
         </a>
         <div className="flex items-center gap-2">
-          <span className="whitespace-nowrap rounded-full border px-2 py-1 text-[10px] font-medium text-muted-foreground">
-            {isLive ? 'Live DB' : 'Demo Data'}
-          </span>
-          <InstallChip />
-          
-          {/* Dark Mode Toggle */}
           <Button
             variant="ghost"
             size="icon"

@@ -1,6 +1,31 @@
 export type PlatformId = 'tata1mg' | 'pharmeasy' | 'netmeds' | 'apollo' | 'truemeds' | 'medplus'
 
-export type Category = 'Diabetes' | 'Blood Pressure' | 'Thyroid' | 'Heart Care' | 'Gastro' | 'Respiratory' | 'Pain Relief' | 'Vitamins & Supplements' | 'Neurological'
+export const CATEGORIES = [
+  'Anti Diabetic',
+  'Anti Infectives',
+  'Anti Malarials',
+  'Anti Neoplastics',
+  'Blood Related',
+  'Cardiac',
+  'Derma',
+  'Gastro Intestinal',
+  'Gynaecological',
+  'Hormones',
+  'Neuro Cns',
+  'Ophthal',
+  'Ophthal Otologicals',
+  'Others',
+  'Otologicals',
+  'Pain Analgesics',
+  'Respiratory',
+  'Sex Stimulants Rejuvenators',
+  'Stomatologicals',
+  'Urology',
+  'Vaccines',
+  'Vitamins Minerals Nutrients',
+] as const
+
+export type Category = (typeof CATEGORIES)[number]
 
 export type Membership = {
   name: string
@@ -23,6 +48,18 @@ export type Platform = {
 
 export type Medicine = {
   id: string
+  brand_name: string
+  salt_composition: string | null
+  pack_size: string | null
+  manufacturer: string | null
+  category: string
+  search_count: number
+  mrp: number
+  is_rx_required: boolean
+}
+
+export type CatalogMedicine = {
+  id: string
   name: string
   pack: string
   salt: string
@@ -31,7 +68,16 @@ export type Medicine = {
   categories: Category[]
   rxRequired: boolean
   prices: Record<PlatformId, number>
+  livePricePlatforms?: PlatformId[]
+  pharmacyPrices?: PharmacyPrice[]
   productUrls?: Partial<Record<PlatformId, string>>
+}
+
+export type PharmacyPrice = {
+  medicine_id: string
+  platform_name: string
+  price: number
+  updated_at: string
 }
 
 export const PLATFORMS: Platform[] = [
@@ -45,10 +91,10 @@ export const PLATFORMS: Platform[] = [
 
 export const PLATFORM_BY_ID = Object.fromEntries(PLATFORMS.map((p) => [p.id, p])) as Record<PlatformId, Platform>
 
-export const MEDICINES: Medicine[] = [
-  { id: 'telma-40', name: 'Telma 40mg Tablet', pack: 'Strip of 15 tablets', salt: 'Telmisartan (40mg)', manufacturer: 'Glenmark Pharmaceuticals', mrp: 248, categories: ['Blood Pressure', 'Heart Care'], rxRequired: true, prices: { tata1mg: 220, pharmeasy: 205, netmeds: 230, apollo: 215, truemeds: 198, medplus: 225 } },
-  { id: 'glycomet-gp-1', name: 'Glycomet GP 1 Tablet PR', pack: 'Strip of 15 tablets', salt: 'Glimepiride (1mg) + Metformin (500mg)', manufacturer: 'USV Ltd', mrp: 162, categories: ['Diabetes'], rxRequired: true, prices: { tata1mg: 142, pharmeasy: 148, netmeds: 136, apollo: 145, truemeds: 130, medplus: 140 } },
-  { id: 'thyronorm-100', name: 'Thyronorm 100mcg Tablet', pack: 'Bottle of 120 tablets', salt: 'Thyroxine (100mcg)', manufacturer: 'Abbott', mrp: 232, categories: ['Thyroid'], rxRequired: true, prices: { tata1mg: 199, pharmeasy: 207, netmeds: 212, apollo: 205, truemeds: 185, medplus: 210 } }
+export const MEDICINES: CatalogMedicine[] = [
+  { id: 'telma-40', name: 'Telma 40mg Tablet', pack: 'Strip of 15 tablets', salt: 'Telmisartan (40mg)', manufacturer: 'Glenmark Pharmaceuticals', mrp: 248, categories: ['Cardiac'], rxRequired: true, prices: { tata1mg: 220, pharmeasy: 205, netmeds: 230, apollo: 215, truemeds: 198, medplus: 225 } },
+  { id: 'glycomet-gp-1', name: 'Glycomet GP 1 Tablet PR', pack: 'Strip of 15 tablets', salt: 'Glimepiride (1mg) + Metformin (500mg)', manufacturer: 'USV Ltd', mrp: 162, categories: ['Anti Diabetic'], rxRequired: true, prices: { tata1mg: 142, pharmeasy: 148, netmeds: 136, apollo: 145, truemeds: 130, medplus: 140 } },
+  { id: 'thyronorm-100', name: 'Thyronorm 100mcg Tablet', pack: 'Bottle of 120 tablets', salt: 'Thyroxine (100mcg)', manufacturer: 'Abbott', mrp: 232, categories: [], rxRequired: true, prices: { tata1mg: 199, pharmeasy: 207, netmeds: 212, apollo: 205, truemeds: 185, medplus: 210 } }
 ]
 
-export const QUICK_FILTERS: Category[] = ['Diabetes', 'Blood Pressure', 'Thyroid', 'Heart Care']
+export const QUICK_FILTERS: Category[] = [...CATEGORIES]

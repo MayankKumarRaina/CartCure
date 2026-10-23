@@ -1,6 +1,7 @@
-import { MEDICINES, PLATFORMS, type Medicine, type Platform, type PlatformId } from './data'
+import { MEDICINES, PLATFORMS, type CatalogMedicine, type Platform, type PlatformId } from './data'
 
-export type CartLine = { medicine: Medicine; qty: number }
+export type CartItem = { medicine: CatalogMedicine; qty: number }
+export type CartLine = CartItem
 
 export type PlatformQuote = {
   platform: Platform
@@ -26,7 +27,7 @@ export type BestOption = {
   savings: number
 }
 
-export function toCartLines(items: Record<string, number>, medicines: Medicine[] = MEDICINES): CartLine[] {
+export function toCartLines(items: Record<string, number>, medicines: CatalogMedicine[] = MEDICINES): CartLine[] {
   const medicineById = Object.fromEntries(medicines.map((m) => [m.id, m]))
   return Object.entries(items)
     .filter(([, qty]) => qty > 0)
@@ -89,7 +90,7 @@ export function bestOption(quotes: PlatformQuote[], includeMemberships: boolean)
   return { ...best, savings: Math.max(0, worst - best.cost) }
 }
 
-export function lowestPlatformFor(medicine: Medicine): PlatformId {
+export function lowestPlatformFor(medicine: CatalogMedicine): PlatformId {
   return PLATFORMS.reduce((a, b) => (medicine.prices[b.id] < medicine.prices[a.id] ? b : a)).id
 }
 

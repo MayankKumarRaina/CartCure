@@ -1,0 +1,21 @@
+name: Weekly Popular Medicine Cache Refresh
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh popular medicine prices
+        env:
+          CARTCURE_URL: ${{ vars.CARTCURE_URL || 'https://cartcure.in' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "$CARTCURE_URL/api/cron/refresh"

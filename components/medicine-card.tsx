@@ -1,19 +1,41 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Check, FileText, Minus, Plus } from 'lucide-react'
-import { PLATFORMS, type Medicine } from '@/lib/data'
+import { PLATFORMS, type CatalogMedicine } from '@/lib/data'
 import { formatINR, lowestPlatformFor } from '@/lib/pricing'
 import { useCart } from '@/components/cart-provider'
 import { cn } from '@/lib/utils'
 
-export function MedicineCard({ medicine }: { medicine: Medicine }) {
-  const { items, add, increment, decrement } = useCart()
+export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
+  const { items, add, increment, decrement, loadingPriceIds, resolveLivePrices } = useCart()
   const qty = items[medicine.id] ?? 0
+  const isPriceLoading = loadingPriceIds.has(medicine.id)
+  const hasAnyLivePrices = medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.length > 0
   const lowestId = lowestPlatformFor(medicine)
   const lowestPrice = medicine.prices[lowestId]
   const [justAdded, setJustAdded] = useState(false)
+  const cardRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    const element = cardRef.current
+    if (!element) return
+
+    if (typeof IntersectionObserver === 'undefined') {
+      void resolveLivePrices(medicine).catch(() => {})
+      return
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        observer.disconnect()
+        void resolveLivePrices(medicine).catch(() => {})
+      }
+    }, { rootMargin: '80px' })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [medicine, resolveLivePrices])
 
   const handleAdd = () => {
     add(medicine.id)
@@ -24,6 +46,7 @@ export function MedicineCard({ medicine }: { medicine: Medicine }) {
 
   return (
     <motion.article
+      ref={cardRef}
       layout
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
@@ -59,7 +82,8 @@ export function MedicineCard({ medicine }: { medicine: Medicine }) {
 
       <ul className="grid grid-cols-3 gap-2" aria-label="Price on each platform">
         {PLATFORMS.map((p) => {
-          const isLowest = p.id === lowestId
+          const isLowest = hasAnyLivePrices && !isPriceLoading && p.id === lowestId
+          const hasLivePrice = medicine.livePricePlatforms?.includes(p.id) ?? true
           return (
             <li
               key={p.id}
@@ -74,14 +98,24 @@ export function MedicineCard({ medicine }: { medicine: Medicine }) {
                 </span>
               )}
               <span className="whitespace-nowrap text-[11px] font-medium text-muted-foreground">{p.name}</span>
-              <span
-                className={cn(
-                  'text-base font-semibold tabular-nums',
-                  isLowest ? 'text-success' : 'text-foreground',
-                )}
-              >
-                {formatINR(medicine.prices[p.id])}
-              </span>
+              {isPriceLoading ? (
+                <span className="mt-1 h-5 w-14 animate-pulse rounded bg-muted" aria-label="Loading price" />
+              ) : hasLivePrice ? (
+                <span
+                  className={cn(
+                    'text-base font-semibold tabular-nums',
+                    isLowest ? 'text-success' : 'text-foreground',
+                  )}
+                >
+                  {formatINR(medicine.prices[p.id])}
+                </span>
+              ) : (
+                <span
+                  className="text-sm font-medium text-muted-foreground"
+                >
+                  —
+                </span>
+              )}
               <span className="sr-only">{isLowest ? 'Lowest base price' : ''}</span>
             </li>
           )
@@ -89,11 +123,17 @@ export function MedicineCard({ medicine }: { medicine: Medicine }) {
       </ul>
 
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          Save up to{' '}
-          <span className="font-semibold text-success">{formatINR(medicine.mrp - lowestPrice)}</span>{' '}
-          vs MRP
-        </p>
+        {isPriceLoading ? (
+          <span className="h-3 w-28 animate-pulse rounded bg-muted" aria-label="Recalculating savings" />
+        ) : !hasAnyLivePrices ? (
+          <p className="text-xs text-muted-foreground">Add to basket to compare live prices</p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Save up to{' '}
+            <span className="font-semibold text-success">{formatINR(medicine.mrp - lowestPrice)}</span>{' '}
+            vs MRP
+          </p>
+        )}
 
         <AnimatePresence mode="popLayout" initial={false}>
           {qty === 0 || justAdded ? (

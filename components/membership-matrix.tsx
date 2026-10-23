@@ -65,12 +65,14 @@ export function MembershipMatrix({
   quotes,
   bestPlatform,
   selectedPlatform,
-  onSelectPlatform
+  onSelectPlatform,
+  isLoading = false,
 }: {
   quotes: PlatformQuote[]
   bestPlatform: PlatformId | null
   selectedPlatform: PlatformId | null
   onSelectPlatform: (id: PlatformId) => void
+  isLoading?: boolean
 }) {
   return (
     <div className="flex flex-col gap-2">
@@ -144,7 +146,11 @@ export function MembershipMatrix({
                         isBest && !isSelected && 'bg-success-soft/30',
                       )}
                     >
-                      <span className="inline-flex justify-end">{row.render(q)}</span>
+                      <span className="inline-flex justify-end">
+                        {isLoading ? (
+                          <span className="inline-block h-3 w-12 animate-pulse rounded bg-muted" aria-label="Recalculating" />
+                        ) : row.render(q)}
+                      </span>
                     </td>
                   )
                 })}

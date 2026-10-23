@@ -65,6 +65,32 @@
   --radius: 0.75rem;
 }
 
+.dark {
+  color-scheme: dark;
+  --background: #020617;
+  --foreground: #f8fafc;
+  --card: #0f172a;
+  --card-foreground: #f8fafc;
+  --popover: #020617;
+  --popover-foreground: #f8fafc;
+  --primary: #14b8a6;
+  --primary-foreground: #042f2e;
+  --primary-soft: #115e59;
+  --secondary: #1e293b;
+  --secondary-foreground: #f8fafc;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
+  --success: #10b981;
+  --success-foreground: #022c22;
+  --success-soft: #064e3b;
+  --destructive: #ef4444;
+  --border: #1e293b;
+  --input: #1e293b;
+  --ring: #2dd4bf;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
