@@ -480,80 +480,81 @@ export function MedicineSearch() {
 
   return (
     <section className="flex flex-col gap-6" aria-label="Find and compare medicines">
-      <div className="sticky top-14 z-30 -mx-4 bg-background/90 px-3 pb-3 pt-3 backdrop-blur-md sm:px-4">
-        <form
-          role="search"
-          className="relative"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void submitSearch(query)
-          }}
-        >
-          <label htmlFor="medicine-search" className="sr-only">Search medicines</label>
-          <Search
-            className="pointer-events-none absolute left-3.5 top-1/2 size-[18px] -translate-y-1/2 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <input
-            ref={inputRef}
-            id="medicine-search"
-            type="search"
-            inputMode="search"
-            autoComplete="off"
-            spellCheck={false}
-            value={query}
-            onChange={(event) => updateQuery(event.target.value)}
-            placeholder="Search medicines"
-            className="h-14 w-full rounded-2xl border bg-card pl-11 pr-4 text-[15px] text-foreground shadow-sm outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground/80 focus:border-primary/50 focus:ring-4 focus:ring-primary/10 [&::-webkit-search-cancel-button]:hidden"
-          />
-        </form>
+      <div className="sticky top-14 z-30 -mx-4 border-b border-transparent bg-background/95 px-3 py-2.5 backdrop-blur-md sm:px-4">
+        <div className="relative">
+          <form
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void submitSearch(query)
+            }}
+          >
+            <label htmlFor="medicine-search" className="sr-only">Search medicines</label>
+            <Search
+              className="pointer-events-none absolute left-3.5 top-1/2 size-[18px] -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <input
+              ref={inputRef}
+              id="medicine-search"
+              type="search"
+              inputMode="search"
+              autoComplete="off"
+              spellCheck={false}
+              value={query}
+              onChange={(event) => updateQuery(event.target.value)}
+              placeholder="Search medicines"
+              className="h-14 w-full rounded-2xl border bg-card pl-11 pr-4 text-[15px] text-foreground shadow-sm outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground/80 focus:border-primary/50 focus:ring-4 focus:ring-primary/10 [&::-webkit-search-cancel-button]:hidden"
+            />
+          </form>
 
-        {visibleSearchResults.length > 0 && (
-          <ul className="absolute inset-x-3 top-[calc(100%-0.5rem)] z-40 max-h-80 overflow-y-auto rounded-xl border bg-popover p-1 shadow-lg sm:inset-x-4" aria-label="Medicine suggestions">
-            {visibleSearchResults.map((medicine) => (
-              <li key={medicine.id}>
-                <button
-                  type="button"
-                  onClick={() => void selectMedicine(medicine)}
-                  className="flex w-full flex-col gap-1 rounded-lg px-3 py-2.5 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
-                >
-                  <span className="text-sm font-medium">{medicine.brand_name}</span>
-                  <span className="line-clamp-1 text-xs text-muted-foreground">
-                    {medicine.salt_composition || 'Composition not listed'} · MRP ₹{medicine.mrp}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <div
-          className="-mx-3 mt-3 flex flex-wrap items-center gap-2 px-3 sm:-mx-4 sm:px-4"
-          role="group"
-          aria-label="Medicine categories"
-        >
-          {CATEGORIES.map((category) => {
-            const Icon = CATEGORY_ICONS[category]
-            const isActive = activeCategory === category
-            return (
-              <button
-                key={category}
-                type="button"
-                aria-pressed={isActive}
-                onClick={() => void loadBrowse(isActive ? null : category)}
-                className={cn(
-                  'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors',
-                  isActive
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'bg-background text-muted-foreground hover:border-slate-300 hover:text-foreground',
-                )}
-              >
-                <Icon className="size-3.5" aria-hidden="true" />
-                {category}
-              </button>
-            )
-          })}
+          {visibleSearchResults.length > 0 && (
+            <ul className="absolute inset-x-0 top-[calc(100%-0.5rem)] z-40 max-h-80 overflow-y-auto rounded-xl border bg-popover p-1 shadow-lg" aria-label="Medicine suggestions">
+              {visibleSearchResults.map((medicine) => (
+                <li key={medicine.id}>
+                  <button
+                    type="button"
+                    onClick={() => void selectMedicine(medicine)}
+                    className="flex w-full flex-col gap-1 rounded-lg px-3 py-2.5 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                  >
+                    <span className="text-sm font-medium">{medicine.brand_name}</span>
+                    <span className="line-clamp-1 text-xs text-muted-foreground">
+                      {medicine.salt_composition || 'Composition not listed'} · MRP ₹{medicine.mrp}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
+      </div>
+
+      <div
+        className="-mx-3 -mt-3 flex flex-wrap items-center gap-2 px-3 sm:-mx-4 sm:px-4"
+        role="group"
+        aria-label="Medicine categories"
+      >
+        {CATEGORIES.map((category) => {
+          const Icon = CATEGORY_ICONS[category]
+          const isActive = activeCategory === category
+          return (
+            <button
+              key={category}
+              type="button"
+              aria-pressed={isActive}
+              onClick={() => void loadBrowse(isActive ? null : category)}
+              className={cn(
+                'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors',
+                isActive
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'bg-background text-muted-foreground hover:border-slate-300 hover:text-foreground',
+              )}
+            >
+              <Icon className="size-3.5" aria-hidden="true" />
+              {category}
+            </button>
+          )
+        })}
       </div>
 
       {error && (
