@@ -14,11 +14,10 @@ const VENDORS = [
   { name: "Netmeds", color: "#fb7185", liquid: "#f43f5e" },
   { name: "Apollo", color: "#6ee7b7", liquid: "#10b981" },
   { name: "Truemeds", color: "#fdba74", liquid: "#f59e0b" },
-  { name: "MedPlus", color: "#93c5fd", liquid: "#3b82f6" },
 ] as const;
 
-const PORTAL_X = [0.08, 0.22, 0.36, 0.64, 0.78, 0.92] as const;
-const CYCLE_MS = 5_400; // One complete pass through all six portals.
+const PORTAL_X = [0.08, 0.28, 0.5, 0.72, 0.92] as const;
+const CYCLE_MS = 4_500; // One complete pass through all five pharmacies.
 const FINISHER_MS = 2_000; // The result reveal always gets its full two seconds.
 
 const clamp = (value: number, min = 0, max = 1): number =>

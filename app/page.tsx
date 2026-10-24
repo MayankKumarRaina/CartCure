@@ -6,7 +6,7 @@ import { CartDrawer } from '@/components/cart-drawer'
 import { BasketBar } from '@/components/basket-bar'
 
 const HIGHLIGHTS = [
-  { icon: Scale, label: '6 pharmacies compared' },
+  { icon: Scale, label: '7 stores compared' },
   { icon: BadgeIndianRupee, label: 'Membership break-even' },
   { icon: ShieldCheck, label: 'No sign-up needed' },
 ]
@@ -19,7 +19,7 @@ export default function Page() {
         <section className="flex flex-col gap-3 pb-2 pt-8 md:pt-12" aria-labelledby="hero-heading">
           <p className="inline-flex w-fit items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
             <span className="size-1.5 rounded-full bg-success" aria-hidden="true" />
-            1mg · PharmEasy · Netmeds · Apollo · Truemeds · MedPlus
+            1mg · PharmEasy · Netmeds · Apollo · Truemeds · HealthKart · TrueBasics
           </p>
           <h1
             id="hero-heading"

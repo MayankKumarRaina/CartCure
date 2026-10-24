@@ -21,7 +21,6 @@ def build_platform_urls(query: str) -> dict:
         "Netmeds": f"https://www.netmeds.com/catalogsearch/result/{enc}/all",
         "Apollo Pharmacy": f"https://www.apollopharmacy.in/search-medicines/{enc}",
         "Truemeds": f"https://www.truemeds.in/search?q={enc}",
-        "MedPlus": f"https://www.medplusmart.com/search/{enc}"
     }
 
 async def human_jitter():

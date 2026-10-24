@@ -9,7 +9,7 @@ const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono'
 
 export const metadata: Metadata = {
   title: "DawaDaam — Compare Medicine Prices Across India's Top Pharmacies",
-  description: 'DawaDaam compares medicine prices across Tata 1mg, PharmEasy, Netmeds, Apollo, Truemeds, and MedPlus.',
+  description: 'DawaDaam compares medicine prices across Tata 1mg, PharmEasy, Netmeds, Apollo, Truemeds, HealthKart, and TrueBasics.',
   applicationName: 'DawaDaam',
   icons: {
     icon: '/dawadaam-icon.png',

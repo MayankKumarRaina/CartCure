@@ -20,7 +20,6 @@ function pharmacySearchUrl(platformId: PlatformId, query: string) {
     netmeds: `https://www.netmeds.com/catalogsearch/result/${encodedQuery}/all`,
     apollo: `https://www.apollopharmacy.in/search-medicines/${encodedQuery}`,
     truemeds: `https://www.truemeds.in/search/${encodedQuery}`,
-    medplus: `https://www.medplusmart.com/searchAll/${encodedQuery}`,
   }
   return urls[platformId]
 }
@@ -47,11 +46,6 @@ export function CartDrawer() {
 
   return (
     <Sheet open={isOpen} onOpenChange={setOpen}>
-      {/* 
-        Updated SheetContent:
-        - w-full !max-w-full (Makes it 100% width on mobile, leaving no space)
-        - md:!max-w-3xl (Allows it to expand beautifully on tablets and desktops for the 6 columns)
-      */}
       <SheetContent className="!w-screen !max-w-[100vw] sm:!w-screen sm:!max-w-[100vw] md:!w-full md:!max-w-4xl flex flex-col p-0">
         <SheetHeader className="p-4 border-b">
           <SheetTitle className="flex items-center gap-2.5 pr-10 text-left">
@@ -134,7 +128,7 @@ export function CartDrawer() {
                     </p>
                   )}
                   <div className="overflow-x-auto rounded-xl border bg-card">
-                    <table className="w-full min-w-[760px] border-collapse text-xs">
+                    <table className="w-full min-w-[640px] border-collapse text-xs">
                       <caption className="sr-only">Standard one-time basket comparison across pharmacies</caption>
                       <thead>
                         <tr className="bg-muted/50">

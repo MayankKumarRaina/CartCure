@@ -93,7 +93,7 @@ type MedicineScannerModalProps = {
 
 function preprocessImage(source: CanvasImageSource, width: number, height: number) {
   const canvas = document.createElement('canvas')
-  const scale = Math.min(1, 1200 / width)
+  const scale = Math.min(1, 900 / Math.max(width, height))
   canvas.width = Math.max(1, Math.round(width * scale))
   canvas.height = Math.max(1, Math.round(height * scale))
   const context = canvas.getContext('2d', { willReadFrequently: true })
@@ -123,10 +123,13 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
   const [isCameraStarting, setIsCameraStarting] = useState(false)
   const [isScanning, setIsScanning] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [statusText, setStatusText] = useState('Reading medicine strip...')
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [candidates, setCandidates] = useState<string[]>([])
   const [barcode, setBarcode] = useState<string | null>(null)
   const [editingCandidate, setEditingCandidate] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const previewObjectUrlRef = useRef<string | null>(null)
 
   function stopCamera() {
     streamRef.current?.getTracks().forEach((track) => track.stop())
@@ -156,6 +159,7 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
     return () => {
       isMountedRef.current = false
       streamRef.current?.getTracks().forEach((track) => track.stop())
+      if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current)
     }
   }, [])
 
@@ -187,13 +191,24 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
 
   async function scanImage(source: CanvasImageSource, width: number, height: number) {
     setIsScanning(true)
-    setProgress(0)
+    setProgress(15)
+    setStatusText('Optimizing photo...')
     setError(null)
     setCandidates([])
     setBarcode(null)
 
     try {
       const canvas = preprocessImage(source, width, height)
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.82)
+      if (source instanceof HTMLVideoElement) stopCamera()
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current)
+        previewObjectUrlRef.current = null
+      }
+      setPreviewUrl(dataUrl)
+      setProgress(25)
+      setStatusText('Starting on-device OCR engine...')
+
       const barcodeApi = window as BarcodeWindow
       const BarcodeDetector = barcodeApi.BarcodeDetector
       const barcodeTask = BarcodeDetector
@@ -213,25 +228,47 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
           }
         })()
         : Promise.resolve()
+      void barcodeTask
 
-      const { createWorker } = await import('tesseract.js')
-      const worker = await createWorker('eng', 1, {
-        logger: ({ progress: workerProgress }) => setProgress(Math.round(workerProgress * 100)),
+      const Tesseract = await import('tesseract.js')
+      const recognizePromise = Tesseract.recognize(dataUrl, 'eng', {
+        workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@v7.0.0/dist/worker.min.js',
+        corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@v7.0.0',
+        langPath: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0',
+        logger: (message) => {
+          if (message.status === 'loading tesseract core' || message.status === 'initializing tesseract') {
+            setProgress((current) => Math.max(current, 35))
+            setStatusText('Loading OCR engine...')
+          } else if (message.status === 'loading language traineddata' || message.status === 'initializing api') {
+            setProgress((current) => Math.max(current, 50))
+            setStatusText('Loading medical dictionary...')
+          } else if (message.status === 'recognizing text' && typeof message.progress === 'number') {
+            const percentage = Math.min(98, Math.max(55, Math.round(55 + message.progress * 43)))
+            setProgress(percentage)
+            setStatusText('Reading medicine strip...')
+          }
+        },
       })
-      let recognizedText = ''
+      let timeoutId: number | undefined
       try {
-        const [result] = await Promise.all([worker.recognize(canvas), barcodeTask])
-        recognizedText = result.data.text
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = window.setTimeout(() => reject(new Error('Medicine scanning timed out. Please try a clearer photo.')), 15000)
+        })
+        const result = await Promise.race([recognizePromise, timeoutPromise])
+        setProgress(100)
+        setStatusText('Scan complete')
+        const found = extractMedicineCandidates(result.data.text)
+        setCandidates(found)
+        setEditingCandidate(found.length > 0 ? 0 : null)
+        if (found.length === 0) setError('No medicine name was clear enough to read. Try another photo or edit the text and search.')
       } finally {
-        await worker.terminate()
+        if (timeoutId !== undefined) window.clearTimeout(timeoutId)
       }
-      const found = extractMedicineCandidates(recognizedText)
-      setCandidates(found)
-      if (found.length === 1) chooseCandidate(found[0])
-      if (found.length === 0) setError('No medicine name was clear enough to read. Try another photo or edit the text and search.')
     } catch (scanFailure) {
       console.error('Unable to scan medicine image:', scanFailure)
-      setError('We could not read this image. Please try a clearer photo or use search.')
+      setError(scanFailure instanceof Error && scanFailure.message.includes('timed out')
+        ? 'Scanning took too long. Please try a clearer photo or search by name.'
+        : 'We could not read this image. Please try a clearer photo or use search.')
     } finally {
       setIsScanning(false)
     }
@@ -252,18 +289,27 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
     if (!file) return
 
     stopCamera()
-    setIsScanning(true)
     const image = new Image()
     const imageUrl = URL.createObjectURL(file)
+    if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current)
+    previewObjectUrlRef.current = imageUrl
+    setPreviewUrl(imageUrl)
+    setError(null)
+    setCandidates([])
+    setBarcode(null)
     image.onload = async () => {
       try {
         await scanImage(image, image.naturalWidth, image.naturalHeight)
       } finally {
-        URL.revokeObjectURL(imageUrl)
+        if (previewObjectUrlRef.current === imageUrl) {
+          URL.revokeObjectURL(imageUrl)
+          previewObjectUrlRef.current = null
+        }
       }
     }
     image.onerror = () => {
       URL.revokeObjectURL(imageUrl)
+      previewObjectUrlRef.current = null
       setIsScanning(false)
       setError('This image could not be opened. Please choose another photo.')
     }
@@ -318,9 +364,11 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
             autoPlay
             playsInline
             muted
-            className={cn('aspect-[4/3] w-full object-cover', isCameraActive ? 'block' : 'hidden')}
+            className={cn('aspect-[4/3] w-full object-cover', isCameraActive && !previewUrl ? 'block' : 'hidden')}
           />
-          {isCameraActive ? (
+          {previewUrl ? (
+            <img src={previewUrl} alt="Captured medicine strip" className="aspect-[4/3] w-full rounded-xl object-contain" />
+          ) : isCameraActive ? (
             <div className="pointer-events-none absolute inset-5 rounded-2xl border-2 border-emerald-400 shadow-[0_0_24px_rgba(52,211,153,0.35)]">
               <span className="absolute -left-0.5 -top-0.5 size-5 rounded-tl-xl border-l-4 border-t-4 border-emerald-300" />
               <span className="absolute -right-0.5 -top-0.5 size-5 rounded-tr-xl border-r-4 border-t-4 border-emerald-300" />
@@ -390,7 +438,7 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
         {isScanning && (
           <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-950/30 p-3" role="status" aria-live="polite">
             <div className="mb-2 flex items-center justify-between gap-2 text-xs text-emerald-200">
-              <span>Reading medicine strip...</span>
+              <span>{statusText}</span>
               <span>{progress}%</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
@@ -433,9 +481,10 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
                       onClick={() => chooseCandidate(candidate)}
                       disabled={!candidate.trim()}
                       aria-label={`Search for ${candidate}`}
-                      className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-400 text-slate-950 hover:bg-emerald-300 disabled:opacity-50"
+                      className="flex min-h-9 shrink-0 items-center justify-center gap-1 rounded-lg bg-emerald-400 px-2 text-xs font-bold text-slate-950 hover:bg-emerald-300 disabled:opacity-50"
                     >
                       <Search className="size-4" aria-hidden="true" />
+                      Search Now
                     </button>
                   ) : (
                     <>
@@ -451,9 +500,10 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
                         type="button"
                         onClick={() => chooseCandidate(candidate)}
                         aria-label={`Search for ${candidate}`}
-                        className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-400 text-slate-950 hover:bg-emerald-300"
+                        className="flex min-h-9 shrink-0 items-center justify-center gap-1 rounded-lg bg-emerald-400 px-2 text-xs font-bold text-slate-950 hover:bg-emerald-300"
                       >
                         <Check className="size-4" aria-hidden="true" />
+                        Search Now
                       </button>
                     </>
                   )}

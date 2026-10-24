@@ -135,7 +135,6 @@ const BRAND_STYLES: Record<PlatformId, string> = {
   netmeds: 'bg-white text-[#24AEB1]',
   pharmeasy: 'bg-[#10847E] text-white',
   truemeds: 'bg-[#1E40AF] text-white',
-  medplus: 'bg-[#D9232D] text-white',
 }
 
 function pharmacyUrl(platform: Platform, medicine: CatalogMedicine) {
@@ -151,7 +150,8 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
     && (medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.includes(id))
   )).sort((a, b) => medicine.prices[a.id] - medicine.prices[b.id])
   const winner = pricedPlatforms[0]
-  const runnerUps = (winner ? pricedPlatforms.slice(1) : PLATFORMS).slice(0, 3)
+  const runnerUps = PLATFORMS.filter(({ id }) => id !== winner?.id).slice(0, 3)
+  const totalStoreCount = PLATFORMS.length + WELLNESS_PARTNERS.length
   const [isExpanded, setIsExpanded] = useState(false)
   const [justAdded, setJustAdded] = useState(false)
   const cardRef = useRef<HTMLElement>(null)
@@ -209,26 +209,26 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
       aria-labelledby={`${medicine.id}-title`}
     >
       <div className="box-border flex w-full min-w-0 max-w-full items-start gap-2 overflow-hidden">
-        <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-slate-700/60 bg-slate-800/90 sm:size-14">
+        <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-slate-700/60 bg-slate-800/90 sm:size-12">
           <DosageIllustration form={dosageFormFor(medicine)} />
         </div>
         <div className="min-w-0 flex-1 pt-0.5">
-          <h3 id={`${medicine.id}-title`} className="line-clamp-1 text-[15px] font-bold leading-snug text-slate-900 dark:text-white sm:text-base">
+          <h3 id={`${medicine.id}-title`} className="line-clamp-1 text-[13.5px] font-semibold leading-snug tracking-tight text-slate-900 dark:text-slate-100 sm:text-[15px]">
             {medicine.name}
           </h3>
-          <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-0.5 truncate text-[11px] font-normal leading-tight text-slate-500 dark:text-slate-400">
             {medicine.pack} <span aria-hidden="true">·</span> {medicine.manufacturer}
           </p>
-          <p className="mt-0.5 truncate text-xs text-slate-600 dark:text-slate-300">{medicine.salt}</p>
+          <p className="mt-0.5 truncate text-[11px] font-medium leading-tight text-slate-600 dark:text-slate-300">{medicine.salt}</p>
         </div>
         <div className="flex shrink-0 flex-col items-end pt-0.5 text-right">
           {medicine.rxRequired && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/80 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
+            <span className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/80 px-1.5 py-0.5 text-[9.5px] font-semibold text-slate-200">
               <FileText className="size-3" aria-hidden="true" />
               RX
             </span>
           )}
-          <span className="mt-1 text-[11px] text-slate-400">MRP {formatINR(medicine.mrp)}</span>
+          <span className="mt-1 text-[11px] font-medium text-slate-400">MRP {formatINR(medicine.mrp)}</span>
         </div>
       </div>
 
@@ -243,19 +243,19 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
           >
             <span className="min-w-0">
               <span className="flex items-center gap-1">
-                <span className="text-xl font-extrabold leading-none text-emerald-600 dark:text-emerald-400">
+                <span className="text-[17px] font-extrabold leading-none text-emerald-600 dark:text-emerald-400 sm:text-lg">
                   {formatINR(medicine.prices[winner.id])}
                 </span>
-                <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-slate-950">
+                <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8.5px] font-extrabold uppercase tracking-wider text-slate-950">
                   Lowest
                 </span>
               </span>
-              <span className="mt-1 block truncate text-[11px] font-medium text-emerald-700/90 dark:text-emerald-400/90">
+              <span className="mt-1 block truncate text-[10.5px] font-medium text-emerald-700/90 dark:text-emerald-400/90">
                 Save {formatINR(Math.max(0, medicine.mrp - medicine.prices[winner.id]))} vs MRP
               </span>
             </span>
             <span className="mx-1 h-7 w-px shrink-0 bg-emerald-500/30" aria-hidden="true" />
-            <span className="min-w-0 truncate text-xs font-semibold text-slate-700 dark:text-slate-200 sm:text-sm">
+            <span className="min-w-0 truncate text-xs font-semibold text-slate-700 dark:text-slate-200">
               <span className="truncate">{winner.shortName}</span>
             </span>
           </a>
@@ -267,7 +267,7 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
             className="flex min-w-0 flex-1 items-center justify-start gap-2.5 rounded-xl border border-emerald-500/40 bg-emerald-50/70 px-3 py-2 text-left dark:bg-emerald-950/35"
           >
             <span>
-              <span className="block text-xl font-extrabold text-emerald-600 dark:text-emerald-400 sm:text-2xl">
+              <span className="block text-[17px] font-extrabold leading-none text-emerald-600 dark:text-emerald-400 sm:text-lg">
                 ₹---
               </span>
               <span className="text-[11px] font-medium text-emerald-700/90 dark:text-emerald-400/90">
@@ -281,14 +281,14 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
           type="button"
           onClick={toggleComparison}
           aria-expanded={isExpanded}
-          className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-700/80 bg-slate-900/80 px-2.5 py-2 text-xs font-semibold text-teal-400"
+          className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-700/80 bg-slate-900/80 px-2.5 py-1.5 text-[11px] font-semibold text-teal-400"
         >
-          Compare {PLATFORMS.length}
+          Compare {totalStoreCount}
           <ChevronDown className={cn('size-3.5 transition-transform', isExpanded && 'rotate-180')} aria-hidden="true" />
         </button>
       </div>
 
-      <div className="box-border mt-2 grid w-full min-w-0 max-w-full grid-cols-[repeat(3,minmax(0,1fr))_34px_auto] items-stretch gap-1.5 overflow-hidden">
+      <div className="box-border mt-2 grid w-full min-w-0 max-w-full grid-cols-[repeat(3,minmax(0,1fr))_46px_auto] items-stretch gap-1.5 overflow-hidden">
         {runnerUps.map((platform) => (
           <a
             key={platform.id}
@@ -302,8 +302,8 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
               {platform.id === 'tata1mg' ? '1mg' : platform.id === 'netmeds' ? '+' : platform.shortName.slice(0, 2)}
             </span>
             <span className="min-w-0 flex-1 leading-tight">
-              <span className="block truncate text-[9px] text-slate-400">{platform.shortName}</span>
-              <span className="block truncate text-[11px] font-bold text-white">
+              <span className="block truncate text-[9.5px] font-medium leading-tight text-slate-400">{platform.shortName}</span>
+              <span className="block truncate text-[11px] font-bold leading-tight text-slate-100">
                 {medicine.prices[platform.id] > 0 && (medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.includes(platform.id))
                   ? formatINR(medicine.prices[platform.id])
                   : '₹---'}
@@ -315,10 +315,9 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
           type="button"
           onClick={toggleComparison}
           aria-expanded={isExpanded}
-          className="flex min-w-0 flex-col items-center justify-center rounded-xl border border-slate-800 bg-slate-900/70 px-1 py-1.5 text-[9px] font-semibold leading-tight text-slate-300"
+          className="flex min-w-0 flex-col items-center justify-center whitespace-nowrap rounded-xl border border-slate-800 bg-slate-900/70 px-1 py-1.5 text-[9.5px] font-semibold leading-tight text-slate-300"
         >
-          <span>+{Math.max(0, PLATFORMS.length - (winner ? 4 : 3))}</span>
-          <span>more</span>
+          +{Math.max(0, totalStoreCount - (winner ? 4 : 3))} more
         </button>
 
         <AnimatePresence mode="popLayout" initial={false}>
@@ -333,7 +332,7 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ type: 'spring', stiffness: 500, damping: 30 }}
               className={cn(
-                'inline-flex min-w-0 items-center justify-center gap-1 rounded-xl bg-emerald-400 px-2 py-2.5 text-xs font-bold text-slate-950 transition-colors hover:bg-emerald-300',
+                'inline-flex min-w-0 items-center justify-center gap-1 rounded-xl bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-950 transition-colors hover:bg-emerald-300',
                 justAdded && 'bg-emerald-500',
               )}
             >
@@ -400,7 +399,7 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
                       <span className="truncate text-sm font-medium text-slate-200">{platform.name}</span>
                     </span>
                     <span className="shrink-0 text-sm font-bold text-white">
-                      {hasPrice ? formatINR(medicine.prices[platform.id]) : isPriceLoading ? 'Checking…' : 'View offers'}
+                      {hasPrice ? formatINR(medicine.prices[platform.id]) : isPriceLoading ? 'Checking…' : 'Check Offer →'}
                     </span>
                   </a>
                 )
@@ -423,7 +422,7 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
                     <span className="truncate text-sm font-medium text-slate-200">{partner.name}</span>
                   </span>
                   <span className="shrink-0 text-right text-[10px] font-semibold text-teal-300">
-                    Wellness &amp; Vitamin Partner — Check Deals →
+                    Check Offer →
                   </span>
                 </a>
               ))}

@@ -703,7 +703,7 @@ export function MedicineSearch() {
               value={query}
               onChange={(event) => updateQuery(event.target.value)}
               placeholder="Search medicines"
-              className="h-14 w-full rounded-2xl border bg-card pl-11 pr-24 text-[15px] text-foreground shadow-sm outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground/80 focus:border-primary/50 focus:ring-4 focus:ring-primary/10 [&::-webkit-search-cancel-button]:hidden"
+              className="h-14 w-full rounded-2xl border bg-card pl-11 pr-24 text-xs text-foreground shadow-sm outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground/80 focus:border-primary/50 focus:ring-4 focus:ring-primary/10 sm:text-sm [&::-webkit-search-cancel-button]:hidden"
             />
             {query && (
               <button
@@ -745,46 +745,46 @@ export function MedicineSearch() {
             </ul>
           )}
         </div>
-      </div>
 
-      <div className="relative my-3 grid grid-cols-2 items-center gap-3" role="group" aria-label="Filter and sort medicines">
-        <label className="relative flex min-w-0 items-center">
-          <SlidersHorizontal className="pointer-events-none absolute left-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
-          <span className="sr-only">Filter by category</span>
-          <select
-            value={activeCategory ?? ''}
-            onChange={(event) => {
-              const value = event.target.value
-              if (value === '' || value === '__clear__') {
-                void loadBrowse(null)
-              } else if (CATEGORIES.includes(value as Category)) {
-                void loadBrowse(value as Category)
-              }
-            }}
-            className="h-11 w-full min-w-0 appearance-none rounded-full border border-slate-200 bg-white pl-9 pr-8 text-xs font-semibold text-slate-800 shadow-sm outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 sm:text-sm"
-          >
-            <option value="">All medicines</option>
-            {CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
-            <option value="__clear__">Clear category filter</option>
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
-        </label>
-        <span className="pointer-events-none absolute left-1/2 top-1/2 z-10 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-slate-300 dark:bg-slate-700" aria-hidden="true" />
-        <label className="relative flex min-w-0 items-center">
-          <ArrowUpDown className="pointer-events-none absolute left-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
-          <span className="sr-only">Sort medicines</span>
-          <select
-            value={sortMode}
-            onChange={(event) => setSortMode(event.target.value as SortMode)}
-            className="h-11 w-full min-w-0 appearance-none rounded-full border border-slate-200 bg-white pl-9 pr-8 text-xs font-semibold text-slate-800 shadow-sm outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 sm:text-sm"
-          >
-            <option value="lowest-price">Sort: Lowest price</option>
-            <option value="most-popular">Sort: Most popular</option>
-            <option value="highest-savings">Sort: Highest savings</option>
-            <option value="name">Sort: Name (A–Z)</option>
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
-        </label>
+        <div className="relative mt-2.5 grid grid-cols-2 items-center gap-3" role="group" aria-label="Filter and sort medicines">
+          <label className="relative flex min-w-0 items-center">
+            <SlidersHorizontal className="pointer-events-none absolute left-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
+            <span className="sr-only">Filter by category</span>
+            <select
+              value={activeCategory ?? ''}
+              onChange={(event) => {
+                const value = event.target.value
+                if (value === '' || value === '__clear__') {
+                  void loadBrowse(null)
+                } else if (CATEGORIES.includes(value as Category)) {
+                  void loadBrowse(value as Category)
+                }
+              }}
+              className="h-11 w-full min-w-0 appearance-none rounded-full border border-slate-200 bg-white pl-9 pr-8 text-xs font-medium text-slate-800 shadow-sm outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            >
+              <option value="">All medicines</option>
+              {CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+              <option value="__clear__">Clear category filter</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
+          </label>
+          <span className="pointer-events-none absolute left-1/2 top-1/2 z-10 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-slate-300 dark:bg-slate-700" aria-hidden="true" />
+          <label className="relative flex min-w-0 items-center">
+            <ArrowUpDown className="pointer-events-none absolute left-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
+            <span className="sr-only">Sort medicines</span>
+            <select
+              value={sortMode}
+              onChange={(event) => setSortMode(event.target.value as SortMode)}
+              className="h-11 w-full min-w-0 appearance-none rounded-full border border-slate-200 bg-white pl-9 pr-8 text-xs font-medium text-slate-800 shadow-sm outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            >
+              <option value="lowest-price">Sort: Lowest price</option>
+              <option value="most-popular">Sort: Most popular</option>
+              <option value="highest-savings">Sort: Highest savings</option>
+              <option value="name">Sort: Name (A–Z)</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
+          </label>
+        </div>
       </div>
 
       {error && (
@@ -794,7 +794,7 @@ export function MedicineSearch() {
       )}
 
       {!selectedCatalogMedicine && !loadingSelectedMedicine && (submittedSearch || !query.trim()) && (
-        <h2 className="text-lg font-semibold">
+        <h2 className="text-sm font-semibold tracking-tight sm:text-base">
           {submittedSearch ? `Results for "${submittedSearch}"` : activeCategory ?? 'Popular chronic medicines'}
         </h2>
       )}
@@ -807,7 +807,7 @@ export function MedicineSearch() {
         />
       ) : selectedCatalogMedicine ? (
         <div className="box-border flex w-full min-w-0 max-w-full flex-col gap-3 overflow-hidden">
-          <h2 className="text-lg font-semibold">Price comparison</h2>
+          <h2 className="text-sm font-semibold tracking-tight sm:text-base">Price comparison</h2>
           <MedicineCard medicine={selectedCatalogMedicine} />
         </div>
       ) : isBrowseLoading && browseMedicines.length === 0 ? (

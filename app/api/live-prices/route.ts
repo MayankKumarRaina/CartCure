@@ -14,8 +14,8 @@ const PLATFORMS = [
   'Netmeds',
   'Apollo Pharmacy',
   'Truemeds',
-  'MedPlus Mart',
 ] as const
+const ACTIVE_PLATFORM_NAMES = new Set<string>(PLATFORMS)
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 type MedicineRequest = { medicine_id: string; mrp: number }
@@ -61,6 +61,7 @@ async function resolvePrices(requests: MedicineRequest[]): Promise<PharmacyPrice
 
     const freshPricesByMedicine = new Map<string, Map<string, PharmacyPrice>>()
     for (const row of cachedPrices ?? []) {
+      if (!ACTIVE_PLATFORM_NAMES.has(row.platform_name)) continue
       const updatedAt = Date.parse(row.updated_at)
       if (!Number.isFinite(updatedAt) || updatedAt < cutoff || updatedAt > now) continue
       let freshPrices = freshPricesByMedicine.get(row.medicine_id)

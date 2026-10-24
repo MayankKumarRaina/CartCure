@@ -33,7 +33,6 @@ function platformIdFromName(platformName: string): PlatformId | null {
   if (name.includes('netmeds')) return 'netmeds'
   if (name.includes('apollo')) return 'apollo'
   if (name.includes('truemeds')) return 'truemeds'
-  if (name.includes('medplus')) return 'medplus'
   return null
 }
 

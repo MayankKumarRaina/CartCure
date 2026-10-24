@@ -8,7 +8,6 @@ const platformIds: Record<string, PlatformId> = {
   netmeds: 'netmeds',
   apollo: 'apollo', 'apollo pharmacy': 'apollo',
   truemeds: 'truemeds',
-  medplus: 'medplus', 'medplus mart': 'medplus',
 }
 
 export function mapMedicine(row: Medicine, pharmacyPrices?: PharmacyPrice[]): CatalogMedicine {
@@ -18,7 +17,6 @@ export function mapMedicine(row: Medicine, pharmacyPrices?: PharmacyPrice[]): Ca
     netmeds: pharmacyPrices === undefined ? row.mrp : 0,
     apollo: pharmacyPrices === undefined ? row.mrp : 0,
     truemeds: pharmacyPrices === undefined ? row.mrp : 0,
-    medplus: pharmacyPrices === undefined ? row.mrp : 0,
   }
   const livePricePlatforms = new Set<PlatformId>()
   for (const price of pharmacyPrices ?? []) {
