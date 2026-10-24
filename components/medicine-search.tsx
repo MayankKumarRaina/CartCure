@@ -678,8 +678,8 @@ export function MedicineSearch() {
   }, [browseMedicines, sortMode])
 
   return (
-    <section className="flex flex-col gap-6" aria-label="Find and compare medicines">
-      <div className="sticky top-14 z-30 -mx-4 border-b border-transparent bg-background/95 px-3 py-2.5 backdrop-blur-md sm:px-4">
+    <section className="box-border flex w-full min-w-0 max-w-full flex-col gap-6 overflow-hidden" aria-label="Find and compare medicines">
+      <div className="sticky top-14 z-30 box-border w-full max-w-full border-b border-transparent bg-background/95 px-3 py-2.5 backdrop-blur-md sm:px-4">
         <div className="relative">
           <form
             role="search"
@@ -806,12 +806,12 @@ export function MedicineSearch() {
           message="Researching live prices across pharmacies..."
         />
       ) : selectedCatalogMedicine ? (
-        <div className="flex flex-col gap-3">
+        <div className="box-border flex w-full min-w-0 max-w-full flex-col gap-3 overflow-hidden">
           <h2 className="text-lg font-semibold">Price comparison</h2>
           <MedicineCard medicine={selectedCatalogMedicine} />
         </div>
       ) : isBrowseLoading && browseMedicines.length === 0 ? (
-        <div className="space-y-4">
+        <div className="box-border w-full min-w-0 max-w-full space-y-4 overflow-hidden">
           <p className="pt-4 text-center text-sm text-muted-foreground" role="status">
             {submittedSearch ? `Searching for "${submittedSearch}"...` : 'Loading popular medicines...'}
           </p>
@@ -827,7 +827,7 @@ export function MedicineSearch() {
         </div>
       ) : browseMedicines.length > 0 ? (
         <>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="box-border grid w-full min-w-0 max-w-full gap-3 overflow-hidden md:grid-cols-2">
             {sortedBrowseMedicines.map((medicine) => (
               <MedicineCard
                 key={medicine.id}

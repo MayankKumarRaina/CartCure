@@ -2,22 +2,21 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowDown, Check, ChevronDown, FileText, Minus, Plus, ShoppingCart } from 'lucide-react'
+import { Check, ChevronDown, FileText, Minus, Plus, ShoppingCart } from 'lucide-react'
 import { PLATFORMS, type CatalogMedicine, type Platform, type PlatformId } from '@/lib/data'
 import { formatINR } from '@/lib/pricing'
 import { useCart } from '@/components/cart-provider'
 import { getAffiliateUrl, WELLNESS_PARTNERS } from '@/lib/affiliates'
 import { cn } from '@/lib/utils'
 
-type DosageForm = 'tablet' | 'capsule' | 'syrup' | 'injection' | 'topical' | 'drops' | 'inhaler'
+type DosageForm = 'tablet' | 'capsule' | 'liquid' | 'injection' | 'topical' | 'inhaler'
 
 function dosageFormFor(medicine: CatalogMedicine): DosageForm {
   const details = `${medicine.name} ${medicine.pack}`.toLowerCase()
   if (/capsule|\bcap\b/.test(details)) return 'capsule'
-  if (/syrup|suspension|liquid/.test(details)) return 'syrup'
+  if (/syrup|suspension|liquid|infusion|drops?/.test(details)) return 'liquid'
   if (/injection|\bvial\b/.test(details)) return 'injection'
   if (/cream|gel|ointment/.test(details)) return 'topical'
-  if (/drops?/.test(details)) return 'drops'
   if (/inhaler/.test(details)) return 'inhaler'
   return 'tablet'
 }
@@ -46,7 +45,7 @@ function DosageIllustration({ form }: { form: DosageForm }) {
     )
   }
 
-  if (form === 'syrup') {
+  if (form === 'liquid') {
     return (
       <svg viewBox="0 0 56 56" className="size-11" role="img" aria-label="Syrup bottle">
         <defs>
@@ -94,16 +93,6 @@ function DosageIllustration({ form }: { form: DosageForm }) {
     )
   }
 
-  if (form === 'drops') {
-    return (
-      <svg viewBox="0 0 56 56" className="size-11" role="img" aria-label="Medicine drops">
-        <path d="M28 8c-5 8-12 15-12 23a12 12 0 0 0 24 0c0-8-7-15-12-23z" fill="#38bdf8" stroke="#bae6fd" strokeWidth="1.5" />
-        <path d="M22 30a7 7 0 0 0 5 8" fill="none" stroke="#e0f2fe" strokeWidth="2" strokeLinecap="round" />
-        <circle cx="22" cy="17" r="3" fill="#f8fafc" />
-      </svg>
-    )
-  }
-
   if (form === 'inhaler') {
     return (
       <svg viewBox="0 0 56 56" className="size-11" role="img" aria-label="Inhaler">
@@ -116,21 +105,26 @@ function DosageIllustration({ form }: { form: DosageForm }) {
   }
 
   return (
-    <svg viewBox="0 0 56 56" className="size-11" role="img" aria-label="Tablets">
+    <svg viewBox="0 0 56 56" className="size-10 sm:size-11" role="img" aria-label="Tablets">
       <defs>
         <linearGradient id="tablet" x1="0" x2="1" y1="0" y2="1">
           <stop stopColor="#fff" />
-          <stop offset="1" stopColor="#cbd5e1" />
+          <stop offset=".56" stopColor="#f1f5f9" />
+          <stop offset="1" stopColor="#94a3b8" />
         </linearGradient>
+        <radialGradient id="tablet-shine" cx=".28" cy=".22" r=".8">
+          <stop stopColor="#fff" stopOpacity=".95" />
+          <stop offset="1" stopColor="#fff" stopOpacity="0" />
+        </radialGradient>
       </defs>
-      <g transform="rotate(-26 28 28)">
-        <rect x="10" y="11" width="17" height="29" rx="8.5" fill="url(#tablet)" stroke="#f8fafc" />
-        <path d="M10 25.5h17" stroke="#94a3b8" strokeOpacity=".7" />
-        <rect x="29" y="17" width="17" height="29" rx="8.5" fill="url(#tablet)" stroke="#f8fafc" />
-        <path d="M29 31.5h17" stroke="#94a3b8" strokeOpacity=".7" />
+      <g transform="rotate(-24 28 28)" stroke="#e2e8f0" strokeWidth=".8">
+        <circle cx="17" cy="19" r="9" fill="url(#tablet)" />
+        <circle cx="36" cy="19" r="9" fill="url(#tablet)" />
+        <circle cx="27" cy="36" r="9" fill="url(#tablet)" />
+        <circle cx="17" cy="19" r="8" fill="url(#tablet-shine)" stroke="none" />
+        <circle cx="36" cy="19" r="8" fill="url(#tablet-shine)" stroke="none" />
+        <circle cx="27" cy="36" r="8" fill="url(#tablet-shine)" stroke="none" />
       </g>
-      <ellipse cx="17" cy="17" rx="4" ry="2" fill="#fff" fillOpacity=".9" transform="rotate(-26 17 17)" />
-      <ellipse cx="36" cy="23" rx="4" ry="2" fill="#fff" fillOpacity=".9" transform="rotate(-26 36 23)" />
     </svg>
   )
 }
@@ -211,15 +205,15 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
       transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-      className="flex flex-col rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950 sm:p-4"
+      className="box-border flex w-full min-w-0 max-w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950 sm:p-4"
       aria-labelledby={`${medicine.id}-title`}
     >
-      <div className="flex min-w-0 items-start gap-2.5">
-        <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl border border-slate-700/60 bg-slate-800/90">
+      <div className="box-border flex w-full min-w-0 max-w-full items-start gap-2 overflow-hidden">
+        <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-slate-700/60 bg-slate-800/90 sm:size-14">
           <DosageIllustration form={dosageFormFor(medicine)} />
         </div>
         <div className="min-w-0 flex-1 pt-0.5">
-          <h3 id={`${medicine.id}-title`} className="text-base font-bold leading-snug text-slate-900 dark:text-white sm:text-lg">
+          <h3 id={`${medicine.id}-title`} className="line-clamp-1 text-[15px] font-bold leading-snug text-slate-900 dark:text-white sm:text-base">
             {medicine.name}
           </h3>
           <p className="truncate text-xs text-slate-500 dark:text-slate-400">
@@ -227,43 +221,42 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
           </p>
           <p className="mt-0.5 truncate text-xs text-slate-600 dark:text-slate-300">{medicine.salt}</p>
         </div>
-        <div className="flex shrink-0 flex-col items-end pt-0.5">
+        <div className="flex shrink-0 flex-col items-end pt-0.5 text-right">
           {medicine.rxRequired && (
             <span className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/80 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
               <FileText className="size-3" aria-hidden="true" />
               RX
             </span>
           )}
-          <span className="mt-1.5 text-xs text-slate-400">MRP {formatINR(medicine.mrp)}</span>
+          <span className="mt-1 text-[11px] text-slate-400">MRP {formatINR(medicine.mrp)}</span>
         </div>
       </div>
 
-      <div className="mt-3 flex items-stretch gap-2">
+      <div className="box-border mt-3 flex w-full min-w-0 max-w-full items-stretch gap-2 overflow-hidden">
         {winner ? (
           <a
             href={pharmacyUrl(winner, medicine)}
             target="_blank"
             rel="noopener noreferrer"
             aria-label={`View ${medicine.name} at ${winner.name} for ${formatINR(medicine.prices[winner.id])}`}
-            className="flex min-w-0 flex-1 items-center justify-between rounded-xl border border-emerald-500/35 bg-emerald-50 px-3 py-2 transition-colors hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-950/70"
+            className="flex min-w-0 flex-1 items-center justify-start gap-2.5 rounded-xl border border-emerald-500/40 bg-emerald-50/70 px-3 py-2 transition-colors hover:bg-emerald-100 dark:bg-emerald-950/35 dark:hover:bg-emerald-950/70"
           >
             <span className="min-w-0">
-              <span className="flex flex-wrap items-center gap-1.5">
-                <span className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400 sm:text-2xl">
+              <span className="flex items-center gap-1">
+                <span className="text-xl font-extrabold leading-none text-emerald-600 dark:text-emerald-400">
                   {formatINR(medicine.prices[winner.id])}
                 </span>
-                <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-950">
+                <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-slate-950">
                   Lowest
                 </span>
               </span>
-              <span className="block text-[11px] font-medium text-emerald-700/90 dark:text-emerald-400/90">
+              <span className="mt-1 block truncate text-[11px] font-medium text-emerald-700/90 dark:text-emerald-400/90">
                 Save {formatINR(Math.max(0, medicine.mrp - medicine.prices[winner.id]))} vs MRP
               </span>
             </span>
-            <span className="mx-2.5 h-6 w-px shrink-0 bg-emerald-500/20" aria-hidden="true" />
-            <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
+            <span className="mx-1 h-7 w-px shrink-0 bg-emerald-500/30" aria-hidden="true" />
+            <span className="min-w-0 truncate text-xs font-semibold text-slate-700 dark:text-slate-200 sm:text-sm">
               <span className="truncate">{winner.shortName}</span>
-              <ArrowDown className="size-3 shrink-0 -rotate-45" aria-hidden="true" />
             </span>
           </a>
         ) : (
@@ -271,7 +264,7 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
             type="button"
             onClick={showOffers}
             aria-busy={isPriceLoading}
-            className="flex min-w-0 flex-1 items-center justify-between rounded-xl border border-emerald-500/35 bg-emerald-50 px-3 py-2 text-left dark:bg-emerald-950/40"
+            className="flex min-w-0 flex-1 items-center justify-start gap-2.5 rounded-xl border border-emerald-500/40 bg-emerald-50/70 px-3 py-2 text-left dark:bg-emerald-950/35"
           >
             <span>
               <span className="block text-xl font-extrabold text-emerald-600 dark:text-emerald-400 sm:text-2xl">
@@ -282,21 +275,20 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
               </span>
               {isPriceLoading && <span className="sr-only">Checking live prices</span>}
             </span>
-            <ArrowDown className="size-4 shrink-0 -rotate-45 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
           </button>
         )}
         <button
           type="button"
           onClick={toggleComparison}
           aria-expanded={isExpanded}
-          className="flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-teal-400"
+          className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-700/80 bg-slate-900/80 px-2.5 py-2 text-xs font-semibold text-teal-400"
         >
           Compare {PLATFORMS.length}
           <ChevronDown className={cn('size-3.5 transition-transform', isExpanded && 'rotate-180')} aria-hidden="true" />
         </button>
       </div>
 
-      <div className="mt-2.5 flex min-w-0 items-center gap-1.5 overflow-x-auto pb-0.5">
+      <div className="box-border mt-2 grid w-full min-w-0 max-w-full grid-cols-[repeat(3,minmax(0,1fr))_34px_auto] items-stretch gap-1.5 overflow-hidden">
         {runnerUps.map((platform) => (
           <a
             key={platform.id}
@@ -304,14 +296,14 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
             target="_blank"
             rel="noopener noreferrer"
             aria-label={`View ${medicine.name} at ${platform.shortName}`}
-            className="flex min-w-0 flex-1 items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900/80 px-2 py-1.5"
+            className="flex min-w-0 items-center gap-1.5 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/90 px-1.5 py-1.5"
           >
-            <span className={cn('flex size-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold', BRAND_STYLES[platform.id])}>
+            <span className={cn('flex size-5 shrink-0 items-center justify-center rounded-full text-[8px] font-extrabold', BRAND_STYLES[platform.id])}>
               {platform.id === 'tata1mg' ? '1mg' : platform.id === 'netmeds' ? '+' : platform.shortName.slice(0, 2)}
             </span>
-            <span className="min-w-0">
-              <span className="block truncate text-[10px] text-slate-400">{platform.shortName}</span>
-              <span className="block truncate text-xs font-bold text-white">
+            <span className="min-w-0 flex-1 leading-tight">
+              <span className="block truncate text-[9px] text-slate-400">{platform.shortName}</span>
+              <span className="block truncate text-[11px] font-bold text-white">
                 {medicine.prices[platform.id] > 0 && (medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.includes(platform.id))
                   ? formatINR(medicine.prices[platform.id])
                   : '₹---'}
@@ -323,9 +315,10 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
           type="button"
           onClick={toggleComparison}
           aria-expanded={isExpanded}
-          className="shrink-0 rounded-xl border border-slate-800 bg-slate-900/60 px-2 py-1.5 text-center text-[10px] font-semibold text-slate-300"
+          className="flex min-w-0 flex-col items-center justify-center rounded-xl border border-slate-800 bg-slate-900/70 px-1 py-1.5 text-[9px] font-semibold leading-tight text-slate-300"
         >
-          +{Math.max(0, PLATFORMS.length - (winner ? 4 : 3))} more
+          <span>+{Math.max(0, PLATFORMS.length - (winner ? 4 : 3))}</span>
+          <span>more</span>
         </button>
 
         <AnimatePresence mode="popLayout" initial={false}>
@@ -340,7 +333,7 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ type: 'spring', stiffness: 500, damping: 30 }}
               className={cn(
-                'inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-400 px-3.5 py-2.5 text-xs font-bold text-slate-950 transition-colors hover:bg-emerald-300 sm:text-sm',
+                'inline-flex min-w-0 items-center justify-center gap-1 rounded-xl bg-emerald-400 px-2 py-2.5 text-xs font-bold text-slate-950 transition-colors hover:bg-emerald-300',
                 justAdded && 'bg-emerald-500',
               )}
             >
@@ -354,22 +347,22 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-              className="flex h-10 shrink-0 items-center rounded-xl border border-emerald-500/40 bg-slate-900"
+              className="flex h-full min-w-0 items-center justify-center rounded-xl border border-emerald-500/40 bg-slate-900"
             >
               <button
                 type="button"
                 onClick={() => decrement(medicine.id)}
                 aria-label={`Decrease ${medicine.name} quantity`}
-                className="flex size-9 items-center justify-center rounded-l-xl text-slate-300 hover:bg-slate-800"
+                className="flex size-6 shrink-0 items-center justify-center rounded-l-xl text-slate-300 hover:bg-slate-800"
               >
                 <Minus className="size-4" aria-hidden="true" />
               </button>
-              <span className="min-w-6 text-center text-sm font-semibold text-white tabular-nums" aria-live="polite">{qty}</span>
+              <span className="min-w-4 text-center text-xs font-semibold text-white tabular-nums" aria-live="polite">{qty}</span>
               <button
                 type="button"
                 onClick={() => increment(medicine.id)}
                 aria-label={`Increase ${medicine.name} quantity`}
-                className="flex size-9 items-center justify-center rounded-r-xl text-emerald-400 hover:bg-slate-800"
+                className="flex size-6 shrink-0 items-center justify-center rounded-r-xl text-emerald-400 hover:bg-slate-800"
               >
                 <Plus className="size-4" aria-hidden="true" />
               </button>

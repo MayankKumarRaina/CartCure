@@ -115,9 +115,10 @@ function preprocessImage(source: CanvasImageSource, width: number, height: numbe
 
 export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const isMountedRef = useRef(false)
-  const [cameraError, setCameraError] = useState<string | null>(null)
   const [isCameraActive, setIsCameraActive] = useState(false)
   const [isCameraStarting, setIsCameraStarting] = useState(false)
   const [isScanning, setIsScanning] = useState(false)
@@ -133,6 +134,11 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
     setIsCameraActive(false)
   }
 
+  function openNativeCamera() {
+    stopCamera()
+    cameraInputRef.current?.click()
+  }
+
   useEffect(() => {
     const video = videoRef.current
     const stream = streamRef.current
@@ -140,8 +146,7 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
       video.srcObject = stream
       void video.play().catch((cameraFailure: unknown) => {
         console.error('Unable to start the medicine scanner preview:', cameraFailure)
-        setCameraError('Camera preview could not start. Upload or take a photo to continue.')
-        stopCamera()
+        openNativeCamera()
       })
     }
   }, [isCameraActive])
@@ -156,14 +161,16 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
 
   async function startCamera() {
     if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraError('Live camera is not available in this browser. Upload a photo instead.')
+      openNativeCamera()
       return
     }
 
-    setCameraError(null)
     setIsCameraStarting(true)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      })
       if (!isMountedRef.current) {
         stream.getTracks().forEach((track) => track.stop())
         return
@@ -172,7 +179,7 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
       setIsCameraActive(true)
     } catch (cameraFailure) {
       console.error('Unable to open medicine scanner camera:', cameraFailure)
-      setCameraError('Camera access was unavailable. Upload or take a photo to continue.')
+      openNativeCamera()
     } finally {
       setIsCameraStarting(false)
     }
@@ -233,7 +240,7 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
   async function captureStrip() {
     const video = videoRef.current
     if (!video || !video.videoWidth || !video.videoHeight) {
-      setCameraError('Wait for the camera preview before capturing the strip.')
+      setError('Wait for the camera preview before capturing the strip.')
       return
     }
     await scanImage(video, video.videoWidth, video.videoHeight)
@@ -261,6 +268,10 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
       setError('This image could not be opened. Please choose another photo.')
     }
     image.src = imageUrl
+  }
+
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    void uploadImage(event)
   }
 
   function chooseCandidate(candidate: string) {
@@ -302,16 +313,20 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
         </header>
 
         <div className="relative overflow-hidden rounded-2xl border border-emerald-400/50 bg-slate-900">
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className={cn('aspect-[4/3] w-full object-cover', isCameraActive ? 'block' : 'hidden')}
+          />
           {isCameraActive ? (
-            <>
-              <video ref={videoRef} autoPlay muted playsInline className="aspect-[4/3] w-full object-cover" />
-              <div className="pointer-events-none absolute inset-5 rounded-2xl border-2 border-emerald-400 shadow-[0_0_24px_rgba(52,211,153,0.35)]">
-                <span className="absolute -left-0.5 -top-0.5 size-5 rounded-tl-xl border-l-4 border-t-4 border-emerald-300" />
-                <span className="absolute -right-0.5 -top-0.5 size-5 rounded-tr-xl border-r-4 border-t-4 border-emerald-300" />
-                <span className="absolute -bottom-0.5 -left-0.5 size-5 rounded-bl-xl border-b-4 border-l-4 border-emerald-300" />
-                <span className="absolute -bottom-0.5 -right-0.5 size-5 rounded-br-xl border-b-4 border-r-4 border-emerald-300" />
-              </div>
-            </>
+            <div className="pointer-events-none absolute inset-5 rounded-2xl border-2 border-emerald-400 shadow-[0_0_24px_rgba(52,211,153,0.35)]">
+              <span className="absolute -left-0.5 -top-0.5 size-5 rounded-tl-xl border-l-4 border-t-4 border-emerald-300" />
+              <span className="absolute -right-0.5 -top-0.5 size-5 rounded-tr-xl border-r-4 border-t-4 border-emerald-300" />
+              <span className="absolute -bottom-0.5 -left-0.5 size-5 rounded-bl-xl border-b-4 border-l-4 border-emerald-300" />
+              <span className="absolute -bottom-0.5 -right-0.5 size-5 rounded-br-xl border-b-4 border-r-4 border-emerald-300" />
+            </div>
           ) : (
             <div className="flex aspect-[4/3] flex-col items-center justify-center gap-3 px-6 text-center">
               <ScanLine className="size-10 text-emerald-400" aria-hidden="true" />
@@ -320,9 +335,8 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
           )}
         </div>
 
-        {cameraError && <p className="mt-3 text-xs text-amber-300" role="status">{cameraError}</p>}
         <div className="mt-3 grid grid-cols-2 gap-2">
-          {!streamRef.current ? (
+          {!isCameraActive ? (
             <button
               type="button"
               onClick={() => void startCamera()}
@@ -343,22 +357,35 @@ export function MedicineScannerModal({ onClose, onSelect }: MedicineScannerModal
               Capture Strip
             </button>
           )}
-          <label className={cn(
-            'inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm font-semibold text-slate-100 hover:bg-slate-800',
-            isScanning && 'pointer-events-none opacity-60',
-          )}>
+          <button
+            type="button"
+            onClick={() => galleryInputRef.current?.click()}
+            disabled={isScanning || isCameraStarting}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm font-semibold text-slate-100 hover:bg-slate-800 disabled:opacity-60"
+          >
             <ImagePlus className="size-4 text-emerald-300" aria-hidden="true" />
-            Upload / Take Photo
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={(event) => void uploadImage(event)}
-              disabled={isScanning}
-              className="sr-only"
-            />
-          </label>
+            Upload from Gallery
+          </button>
         </div>
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handleFileChange}
+          className="hidden"
+          tabIndex={-1}
+          aria-hidden="true"
+        />
+        <input
+          ref={galleryInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          className="hidden"
+          tabIndex={-1}
+          aria-hidden="true"
+        />
 
         {isScanning && (
           <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-950/30 p-3" role="status" aria-live="polite">

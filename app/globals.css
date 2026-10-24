@@ -193,9 +193,13 @@ html.theme-transitioning *::after {
   }
   html {
     -webkit-tap-highlight-color: transparent;
+    max-width: 100vw;
+    overflow-x: hidden;
   }
   body {
     @apply bg-background text-foreground font-sans;
     font-feature-settings: 'cv11', 'ss01';
+    max-width: 100vw;
+    overflow-x: hidden;
   }
 }
