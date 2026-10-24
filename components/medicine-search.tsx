@@ -28,7 +28,7 @@ import {
   Wind,
   Zap,
 } from 'lucide-react'
-import { CATEGORIES, type Category, type Medicine, type PharmacyPrice } from '@/lib/data'
+import { CATEGORIES, MEDICINES, type Category, type Medicine, type PharmacyPrice } from '@/lib/data'
 import { useCart } from '@/components/cart-provider'
 import LoadingResearcher from '@/components/loading-researcher'
 import { MedicineCard } from '@/components/medicine-card'
@@ -40,6 +40,7 @@ const INITIAL_MEDICINE_LIMIT = 50
 const APPEND_MEDICINE_LIMIT = 10
 const BROWSE_MEDICINE_CAP = 120
 const LIVE_PRICE_PAGE_SIZE = 50
+const MEDICINE_CACHE_KEY = 'dawadaam_cached_popular_v1'
 
 const CATEGORY_ICONS: Record<Category, typeof Activity> = {
   'Anti Diabetic': Activity,
@@ -73,6 +74,100 @@ type PendingLivePage = {
   medicines: CatalogMedicine[]
 }
 
+type MedicineCache = {
+  popular: CatalogMedicine[]
+  categories: Partial<Record<Category, CatalogMedicine[]>>
+}
+
+type FailedLoad =
+  | { type: 'browse'; category: Category | null }
+  | { type: 'search'; term: string }
+  | { type: 'autocomplete' }
+  | { type: 'append' }
+  | { type: 'live-page' }
+
+async function fetchWithRetry<T>(
+  fetcher: () => Promise<T>,
+  maxAttempts = 3,
+  baseDelayMs = 900,
+  signal?: AbortSignal,
+): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError')
+    try {
+      return await fetcher()
+    } catch (error) {
+      lastError = error
+      if (signal?.aborted || attempt === maxAttempts) break
+      await new Promise<void>((resolve, reject) => {
+        const onAbort = () => {
+          window.clearTimeout(timeout)
+          signal?.removeEventListener('abort', onAbort)
+          reject(new DOMException('The operation was aborted.', 'AbortError'))
+        }
+        const timeout = window.setTimeout(() => {
+          signal?.removeEventListener('abort', onAbort)
+          resolve()
+        }, baseDelayMs * 2 ** (attempt - 1))
+        signal?.addEventListener('abort', onAbort, { once: true })
+        if (signal?.aborted) onAbort()
+      })
+    }
+  }
+  throw lastError
+}
+
+function isCachedCatalogMedicine(value: unknown): value is CatalogMedicine {
+  if (typeof value !== 'object' || value === null) return false
+  const medicine = value as Partial<CatalogMedicine>
+  return typeof medicine.id === 'string'
+    && typeof medicine.name === 'string'
+    && typeof medicine.mrp === 'number'
+    && Array.isArray(medicine.categories)
+    && typeof medicine.prices === 'object'
+    && medicine.prices !== null
+    && Object.values(medicine.prices).every((price) => typeof price === 'number' && Number.isFinite(price))
+}
+
+function readMedicineCache(): MedicineCache {
+  try {
+    const cached = localStorage.getItem(MEDICINE_CACHE_KEY)
+    if (!cached) return { popular: [], categories: {} }
+    const parsed: unknown = JSON.parse(cached)
+    if (typeof parsed !== 'object' || parsed === null) return { popular: [], categories: {} }
+
+    const value = parsed as Partial<MedicineCache>
+    const categories: MedicineCache['categories'] = {}
+    if (typeof value.categories === 'object' && value.categories !== null) {
+      for (const category of CATEGORIES) {
+        const entries = value.categories[category]
+        if (Array.isArray(entries)) {
+          categories[category] = entries.filter(isCachedCatalogMedicine).slice(0, 20)
+        }
+      }
+    }
+    return {
+      popular: Array.isArray(value.popular) ? value.popular.filter(isCachedCatalogMedicine).slice(0, 20) : [],
+      categories,
+    }
+  } catch (cacheError) {
+    console.warn('Unable to read cached DawaDaam medicines:', cacheError)
+    return { popular: [], categories: {} }
+  }
+}
+
+function cacheMedicines(category: Category | null, medicines: CatalogMedicine[]) {
+  try {
+    const cache = readMedicineCache()
+    if (category) cache.categories[category] = medicines.slice(0, 20)
+    else cache.popular = medicines.slice(0, 20)
+    localStorage.setItem(MEDICINE_CACHE_KEY, JSON.stringify(cache))
+  } catch (cacheError) {
+    console.warn('Unable to cache DawaDaam medicines:', cacheError)
+  }
+}
+
 function searchFilter(term: string) {
   const safeTerm = term.replace(/[(),"]/g, ' ').replace(/[\\%_]/g, '\\$&').trim()
   const pattern = `%${safeTerm}%`
@@ -81,12 +176,14 @@ function searchFilter(term: string) {
 
 async function mapMedicinesWithCachedPrices(rows: Medicine[]): Promise<CatalogMedicine[]> {
   if (rows.length === 0) return []
-  const { data: prices, error } = await supabase
-    .from('pharmacy_prices')
-    .select('medicine_id, platform_name, price, updated_at')
-    .in('medicine_id', rows.map(({ id }) => id))
-
-  if (error) throw error
+  const prices = await fetchWithRetry(async () => {
+    const { data, error } = await supabase
+      .from('pharmacy_prices')
+      .select('medicine_id, platform_name, price, updated_at')
+      .in('medicine_id', rows.map(({ id }) => id))
+    if (error) throw error
+    return data
+  })
 
   const pricesByMedicine = new Map<string, PharmacyPrice[]>()
   for (const price of prices) {
@@ -128,6 +225,10 @@ export function MedicineSearch() {
   const browseLoadingRef = useRef(false)
   const livePageLoadingRef = useRef(false)
   const pendingLivePageRef = useRef<PendingLivePage | null>(null)
+  const failedLoadRef = useRef<FailedLoad | null>(null)
+  const retryOnResumeRef = useRef(false)
+  const retryRunningRef = useRef(false)
+  const retryAutocompleteRef = useRef<(() => Promise<void>) | null>(null)
 
   useEffect(() => {
     if (window.matchMedia('(pointer: fine)').matches) inputRef.current?.focus()
@@ -142,13 +243,21 @@ export function MedicineSearch() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const loadBrowse = useCallback(async (category: Category | null) => {
+  const loadBrowse = useCallback(async (category: Category | null, keepCurrentResults = false) => {
     const currentOperation = ++operationId.current
+    retryOnResumeRef.current = false
+    const cache = readMedicineCache()
+    const cachedMedicines = category
+      ? cache.categories[category] ?? []
+      : cache.popular
+    if (cachedMedicines.length > 0) registerMedicines(cachedMedicines)
     setSubmittedSearch(null)
     setQuery('')
     setSearchResults([])
     setSelectedMedicine(null)
-    setBrowseMedicines([])
+    if (!keepCurrentResults || cachedMedicines.length > 0) {
+      setBrowseMedicines(cachedMedicines)
+    }
     pendingLivePageRef.current = null
     setHasMoreBrowseMedicines(true)
     setActiveCategory(category)
@@ -158,27 +267,30 @@ export function MedicineSearch() {
     setIsBrowseLoading(true)
 
     try {
-      const medicinesQuery = supabase.from('medicines').select('*')
       const normalizedCategory = category?.trim() ?? null
-      const result = normalizedCategory
-        ? await medicinesQuery
-          .ilike('category', normalizedCategory)
+      const rows = await fetchWithRetry(async () => {
+        let medicinesQuery = supabase.from('medicines').select('*')
+        if (normalizedCategory) {
+          medicinesQuery = medicinesQuery.ilike('category', normalizedCategory)
+        } else {
+          medicinesQuery = medicinesQuery.in('category', CATEGORIES)
+        }
+        const { data, error: queryError } = await medicinesQuery
           .order('search_count', { ascending: false })
           .order('id', { ascending: true })
           .range(0, INITIAL_MEDICINE_LIMIT - 1)
-        : await medicinesQuery
-          .in('category', CATEGORIES)
-          .order('search_count', { ascending: false })
-          .order('id', { ascending: true })
-          .range(0, INITIAL_MEDICINE_LIMIT - 1)
-
-      if (result.error) throw result.error
+        if (queryError) throw queryError
+        return data
+      })
       if (currentOperation !== operationId.current) return
 
-      const medicines = await mapMedicinesWithCachedPrices(result.data)
+      const medicines = await mapMedicinesWithCachedPrices(rows)
       if (currentOperation !== operationId.current) return
       registerMedicines(medicines)
       setBrowseMedicines(medicines)
+      cacheMedicines(category, medicines)
+      failedLoadRef.current = null
+      retryOnResumeRef.current = false
       setHasMoreBrowseMedicines(medicines.length === INITIAL_MEDICINE_LIMIT)
       setIsDataLoaded(true)
     } catch (browseError) {
@@ -187,6 +299,15 @@ export function MedicineSearch() {
           `Unable to load ${category ?? 'popular'} medicines:`,
           browseError instanceof Error ? browseError.message : JSON.stringify(browseError),
         )
+        if (cachedMedicines.length === 0) {
+          const fallback = category
+            ? MEDICINES.filter((medicine) => medicine.categories.includes(category))
+            : MEDICINES
+          setBrowseMedicines(fallback.length > 0 ? fallback : MEDICINES)
+        }
+        setHasMoreBrowseMedicines(false)
+        failedLoadRef.current = { type: 'browse', category }
+        retryOnResumeRef.current = true
         setError('We could not load these medicines right now. Please try again.')
         setIsDataLoaded(true)
       }
@@ -200,6 +321,11 @@ export function MedicineSearch() {
   }, [loadBrowse])
 
   useEffect(() => {
+    retryAutocompleteRef.current = null
+    if (failedLoadRef.current?.type === 'autocomplete') {
+      failedLoadRef.current = null
+      retryOnResumeRef.current = false
+    }
     const term = query.trim()
     const currentSearch = ++searchRequestId.current
     if (!term || submittedSearch !== null) {
@@ -214,30 +340,37 @@ export function MedicineSearch() {
     const pattern = `%${term}%`
 
     async function searchMedicines() {
-      const [brandResult, saltResult] = await Promise.all([
-        supabase
-          .from('medicines')
-          .select('*')
-          .ilike('brand_name', pattern)
-          .order('mrp', { ascending: true })
-          .limit(8)
-          .abortSignal(controller.signal),
-        supabase
-          .from('medicines')
-          .select('*')
-          .ilike('salt_composition', pattern)
-          .order('mrp', { ascending: true })
-          .limit(8)
-          .abortSignal(controller.signal),
-      ])
-
-      if (brandResult.error) throw brandResult.error
-      if (saltResult.error) throw saltResult.error
+      const [brandRows, saltRows] = await fetchWithRetry(async () => {
+        const [brandResult, saltResult] = await Promise.all([
+          supabase
+            .from('medicines')
+            .select('*')
+            .ilike('brand_name', pattern)
+            .order('mrp', { ascending: true })
+            .limit(8)
+            .abortSignal(controller.signal),
+          supabase
+            .from('medicines')
+            .select('*')
+            .ilike('salt_composition', pattern)
+            .order('mrp', { ascending: true })
+            .limit(8)
+            .abortSignal(controller.signal),
+        ])
+        if (brandResult.error) throw brandResult.error
+        if (saltResult.error) throw saltResult.error
+        return [brandResult.data, saltResult.data] as const
+      }, 3, 900, controller.signal)
       if (currentSearch !== searchRequestId.current) return
 
       const uniqueRows = new Map<string, Medicine>()
-      for (const row of [...brandResult.data, ...saltResult.data]) uniqueRows.set(row.id, row)
+      for (const row of [...brandRows, ...saltRows]) uniqueRows.set(row.id, row)
       setSearchResults([...uniqueRows.values()].slice(0, 8))
+      setError(null)
+      if (failedLoadRef.current?.type === 'autocomplete') {
+        failedLoadRef.current = null
+        retryOnResumeRef.current = false
+      }
     }
 
     void searchMedicines()
@@ -247,6 +380,9 @@ export function MedicineSearch() {
           'Unable to search Supabase medicines:',
           searchError instanceof Error ? searchError.message : JSON.stringify(searchError),
         )
+        failedLoadRef.current = { type: 'autocomplete' }
+        retryOnResumeRef.current = true
+        retryAutocompleteRef.current = () => searchMedicines()
         setError('Medicine search is temporarily unavailable. Please try again.')
       })
       .finally(() => {
@@ -256,16 +392,17 @@ export function MedicineSearch() {
     return () => controller.abort()
   }, [query, submittedSearch])
 
-  const submitSearch = useCallback(async (value: string) => {
+  const submitSearch = useCallback(async (value: string, keepCurrentResults = false) => {
     const term = value.trim()
     if (!term) return
 
     const currentOperation = ++operationId.current
+    retryOnResumeRef.current = false
     setSubmittedSearch(term)
     setSearchResults([])
     setSelectedMedicine(null)
     setActiveCategory(null)
-    setBrowseMedicines([])
+    if (!keepCurrentResults) setBrowseMedicines([])
     pendingLivePageRef.current = null
     setHasMoreBrowseMedicines(true)
     setError(null)
@@ -274,34 +411,42 @@ export function MedicineSearch() {
     setIsBrowseLoading(true)
 
     try {
-      const { data, error: queryError } = await supabase
-        .from('medicines')
-        .select('*')
-        .or(searchFilter(term))
-        .order('search_count', { ascending: false })
-        .order('id', { ascending: true })
-        .range(0, INITIAL_MEDICINE_LIMIT - 1)
-
-      if (queryError) throw queryError
+      const rows = await fetchWithRetry(async () => {
+        const { data, error: queryError } = await supabase
+          .from('medicines')
+          .select('*')
+          .or(searchFilter(term))
+          .order('search_count', { ascending: false })
+          .order('id', { ascending: true })
+          .range(0, INITIAL_MEDICINE_LIMIT - 1)
+        if (queryError) throw queryError
+        return data
+      })
       if (currentOperation !== operationId.current) return
 
-      const medicines = await mapMedicinesWithCachedPrices(data)
+      const medicines = await mapMedicinesWithCachedPrices(rows)
       if (currentOperation !== operationId.current) return
       registerMedicines(medicines)
       setBrowseMedicines(medicines)
       setHasMoreBrowseMedicines(medicines.length === INITIAL_MEDICINE_LIMIT)
+      failedLoadRef.current = null
+      retryOnResumeRef.current = false
     } catch (searchError) {
       if (currentOperation === operationId.current) {
         console.error(
           `Unable to load search results for "${term}":`,
           searchError instanceof Error ? searchError.message : JSON.stringify(searchError),
         )
+        failedLoadRef.current = { type: 'search', term }
+        retryOnResumeRef.current = true
+        if (browseMedicines.length === 0) setBrowseMedicines(MEDICINES)
+        setHasMoreBrowseMedicines(false)
         setError('We could not load these search results right now. Please try again.')
       }
     } finally {
       if (currentOperation === operationId.current) setIsBrowseLoading(false)
     }
-  }, [registerMedicines])
+  }, [browseMedicines.length, registerMedicines])
 
   const appendBrowseMedicines = useCallback(async () => {
     if (
@@ -312,42 +457,51 @@ export function MedicineSearch() {
     ) return
 
     browseLoadingRef.current = true
+    retryOnResumeRef.current = false
     setIsAppending(true)
+    setError(null)
     const currentOperation = operationId.current
     const offset = browseMedicines.length
     try {
-      let medicinesQuery = supabase.from('medicines').select('*')
-      if (submittedSearch) {
-        medicinesQuery = medicinesQuery.or(searchFilter(submittedSearch))
-      } else if (activeCategory) {
-        medicinesQuery = medicinesQuery.ilike('category', activeCategory.trim())
-      }
-      const { data, error: queryError } = await medicinesQuery
-        .order('search_count', { ascending: false })
-        .order('id', { ascending: true })
-        .range(offset, offset + APPEND_MEDICINE_LIMIT - 1)
-
-      if (queryError) throw queryError
+      const rows = await fetchWithRetry(async () => {
+        let medicinesQuery = supabase.from('medicines').select('*')
+        if (submittedSearch) {
+          medicinesQuery = medicinesQuery.or(searchFilter(submittedSearch))
+        } else if (activeCategory) {
+          medicinesQuery = medicinesQuery.ilike('category', activeCategory.trim())
+        }
+        const { data, error: queryError } = await medicinesQuery
+          .order('search_count', { ascending: false })
+          .order('id', { ascending: true })
+          .range(offset, offset + APPEND_MEDICINE_LIMIT - 1)
+        if (queryError) throw queryError
+        return data
+      })
       if (currentOperation !== operationId.current) return
 
-      const nextPage = await mapMedicinesWithCachedPrices(data)
+      const nextPage = await mapMedicinesWithCachedPrices(rows)
       if (currentOperation !== operationId.current) return
       setBrowseMedicines((current) => [...current, ...nextPage].slice(0, BROWSE_MEDICINE_CAP))
+      cacheMedicines(activeCategory, [...browseMedicines, ...nextPage])
       registerMedicines(nextPage)
       setHasMoreBrowseMedicines(nextPage.length === APPEND_MEDICINE_LIMIT)
+      failedLoadRef.current = null
+      retryOnResumeRef.current = false
     } catch (appendError) {
       if (currentOperation === operationId.current) {
         console.error(
           `Unable to append ${activeCategory ?? `search "${submittedSearch}"`} medicines:`,
           appendError instanceof Error ? appendError.message : JSON.stringify(appendError),
         )
+        failedLoadRef.current = { type: 'append' }
+        retryOnResumeRef.current = true
         setError('Unable to load more medicines. Please try again.')
       }
     } finally {
       browseLoadingRef.current = false
       if (currentOperation === operationId.current) setIsAppending(false)
     }
-  }, [activeCategory, browseMedicines.length, hasMoreBrowseMedicines, registerMedicines, submittedSearch])
+  }, [activeCategory, browseMedicines, hasMoreBrowseMedicines, registerMedicines, submittedSearch])
 
   useEffect(() => {
     if ((!activeCategory && !submittedSearch) || !hasMoreBrowseMedicines || browseMedicines.length >= BROWSE_MEDICINE_CAP) return
@@ -369,8 +523,10 @@ export function MedicineSearch() {
     ) return
 
     livePageLoadingRef.current = true
+    retryOnResumeRef.current = false
     setIsLoadingLivePage(true)
     setLivePageError(null)
+    setError(null)
     const currentOperation = operationId.current
     try {
       let nextPage: CatalogMedicine[]
@@ -381,21 +537,23 @@ export function MedicineSearch() {
         nextPage = pendingLivePageRef.current.medicines
       } else {
         const offset = browseMedicines.length
-        let medicinesQuery = supabase.from('medicines').select('*')
-        if (submittedSearch) {
-          medicinesQuery = medicinesQuery.or(searchFilter(submittedSearch))
-        } else if (activeCategory) {
-          medicinesQuery = medicinesQuery.ilike('category', activeCategory.trim())
-        }
-        const { data, error: queryError } = await medicinesQuery
-          .order('search_count', { ascending: false })
-          .order('id', { ascending: true })
-          .range(offset, offset + LIVE_PRICE_PAGE_SIZE - 1)
-
-        if (queryError) throw queryError
+        const rows = await fetchWithRetry(async () => {
+          let medicinesQuery = supabase.from('medicines').select('*')
+          if (submittedSearch) {
+            medicinesQuery = medicinesQuery.or(searchFilter(submittedSearch))
+          } else if (activeCategory) {
+            medicinesQuery = medicinesQuery.ilike('category', activeCategory.trim())
+          }
+          const { data, error: queryError } = await medicinesQuery
+            .order('search_count', { ascending: false })
+            .order('id', { ascending: true })
+            .range(offset, offset + LIVE_PRICE_PAGE_SIZE - 1)
+          if (queryError) throw queryError
+          return data
+        })
         if (currentOperation !== operationId.current) return
 
-        nextPage = await mapMedicinesWithCachedPrices(data)
+        nextPage = await mapMedicinesWithCachedPrices(rows)
         if (currentOperation !== operationId.current) return
         if (nextPage.length === 0) {
           setHasMoreBrowseMedicines(false)
@@ -405,7 +563,10 @@ export function MedicineSearch() {
         pendingLivePageRef.current = { category: activeCategory, searchTerm: submittedSearch, medicines: nextPage }
         registerMedicines(nextPage)
         setBrowseMedicines((current) => [...current, ...nextPage])
+        cacheMedicines(activeCategory, [...browseMedicines, ...nextPage])
         setHasMoreBrowseMedicines(nextPage.length === LIVE_PRICE_PAGE_SIZE)
+        failedLoadRef.current = null
+        retryOnResumeRef.current = false
       }
 
       await resolveLivePricesBatch(nextPage)
@@ -416,13 +577,70 @@ export function MedicineSearch() {
           `Unable to load more ${activeCategory ?? `search "${submittedSearch}"`} live prices:`,
           loadError instanceof Error ? loadError.message : JSON.stringify(loadError),
         )
+        failedLoadRef.current = { type: 'live-page' }
+        retryOnResumeRef.current = true
         setLivePageError('Unable to refresh prices for these medicines. Please try again.')
       }
     } finally {
       livePageLoadingRef.current = false
       if (currentOperation === operationId.current) setIsLoadingLivePage(false)
     }
-  }, [activeCategory, browseMedicines.length, registerMedicines, resolveLivePricesBatch, submittedSearch])
+  }, [activeCategory, browseMedicines, registerMedicines, resolveLivePricesBatch, submittedSearch])
+
+  useEffect(() => {
+    const retryFailedLoad = () => {
+      if (!retryOnResumeRef.current || retryRunningRef.current) return
+      const failedLoad = failedLoadRef.current
+      if (!failedLoad) return
+
+      retryRunningRef.current = true
+      retryOnResumeRef.current = false
+      setError(null)
+      setLivePageError(null)
+      let retry: Promise<void> = Promise.resolve()
+      switch (failedLoad.type) {
+        case 'browse':
+          retry = loadBrowse(failedLoad.category, true)
+          break
+        case 'search':
+          retry = submitSearch(failedLoad.term, true)
+          break
+        case 'autocomplete':
+          setSearching(true)
+          retry = (retryAutocompleteRef.current?.() ?? Promise.resolve())
+            .finally(() => setSearching(false))
+          break
+        case 'append':
+          retry = appendBrowseMedicines()
+          break
+        case 'live-page':
+          retry = loadNextLivePricePage()
+          break
+      }
+      void retry.catch((retryError: unknown) => {
+        console.error(
+          'Unable to retry medicine loading after reconnect:',
+          retryError instanceof Error ? retryError.message : JSON.stringify(retryError),
+        )
+        retryOnResumeRef.current = true
+        if (failedLoad.type === 'autocomplete') {
+          setError('Medicine search is temporarily unavailable. Please try again.')
+        }
+      }).finally(() => {
+        retryRunningRef.current = false
+      })
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') retryFailedLoad()
+    }
+    window.addEventListener('online', retryFailedLoad)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      window.removeEventListener('online', retryFailedLoad)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [appendBrowseMedicines, loadBrowse, loadNextLivePricePage, submitSearch])
 
   async function selectMedicine(row: Medicine) {
     const currentOperation = ++operationId.current
@@ -580,10 +798,21 @@ export function MedicineSearch() {
           <h2 className="text-lg font-semibold">Price comparison</h2>
           <MedicineCard medicine={selectedCatalogMedicine} />
         </div>
-      ) : isBrowseLoading ? (
-        <p className="py-8 text-center text-sm text-muted-foreground" role="status">
-          {submittedSearch ? `Searching for "${submittedSearch}"...` : 'Loading popular medicines...'}
-        </p>
+      ) : isBrowseLoading && browseMedicines.length === 0 ? (
+        <div className="space-y-4">
+          <p className="pt-4 text-center text-sm text-muted-foreground" role="status">
+            {submittedSearch ? `Searching for "${submittedSearch}"...` : 'Loading popular medicines...'}
+          </p>
+          <div className="grid gap-3 md:grid-cols-2" aria-hidden="true">
+            {[0, 1, 2, 3].map((item) => (
+              <div key={item} className="space-y-3 rounded-2xl border bg-card p-4">
+                <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+                <div className="h-16 animate-pulse rounded-xl bg-muted/70" />
+              </div>
+            ))}
+          </div>
+        </div>
       ) : browseMedicines.length > 0 ? (
         <>
           <div className="grid gap-3 md:grid-cols-2">

@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { ShoppingBag } from 'lucide-react'
 import { Logo } from '@/components/logo'
 import { useCart } from '@/components/cart-provider'
+import { InstallChip } from '@/components/install-chip'
 
 export function SiteHeader() {
   const { totalItems, setOpen, isLive } = useCart()
@@ -18,6 +19,7 @@ export function SiteHeader() {
           <Logo isLive={isLive} />
         </a>
         <div className="flex items-center gap-2">
+          <InstallChip />
           <Button
             variant="ghost"
             size="icon"

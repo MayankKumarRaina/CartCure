@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { MonitorSmartphone, Share, SquarePlus } from 'lucide-react'
+import { Download, MonitorSmartphone, Share, SquarePlus } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -53,10 +53,11 @@ export function InstallChip() {
       <button
         type="button"
         onClick={handleClick}
-        className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full border border-primary/20 bg-primary-soft px-2.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10 md:hidden"
+        className="inline-flex h-8 items-center gap-1 whitespace-nowrap rounded-full border border-primary/20 bg-primary-soft px-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10 sm:gap-1.5 sm:px-2.5"
       >
-        <SquarePlus className="size-3.5" aria-hidden="true" />
-        Add to Home Screen
+        <Download className="size-3.5" aria-hidden="true" />
+        <span className="sm:hidden">Install</span>
+        <span className="hidden sm:inline">Install App</span>
       </button>
 
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
@@ -64,7 +65,7 @@ export function InstallChip() {
           <DialogHeader>
             <DialogTitle>Install DawaDaam</DialogTitle>
             <DialogDescription>
-              Get one-tap access to price comparisons, right from your home screen.
+              Tap Share → Add to Home Screen to install DawaDaam as an app.
             </DialogDescription>
           </DialogHeader>
           <ol className="flex flex-col gap-3 text-sm">
