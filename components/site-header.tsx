@@ -1,6 +1,6 @@
 'use client'
-import { useRef } from "react"
-import { flushSync } from "react-dom"
+import { type CSSProperties, useEffect, useRef, useState } from "react"
+import { createPortal, flushSync } from "react-dom"
 import { useTheme } from "next-themes"
 import { Moon, Sun } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -14,10 +14,24 @@ type ViewTransitionDocument = Document & {
   startViewTransition?: (callback: () => void) => { ready: Promise<void>; finished: Promise<void> }
 }
 
+type ThemeRipple = {
+  x: number
+  y: number
+  radius: number
+  id: number
+}
+
 export function SiteHeader() {
   const { totalItems, setOpen, isLive } = useCart()
   const { setTheme } = useTheme()
   const themeBtnRef = useRef<HTMLButtonElement>(null)
+  const rippleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const rippleSequenceRef = useRef(0)
+  const [themeRipple, setThemeRipple] = useState<ThemeRipple | null>(null)
+
+  useEffect(() => () => {
+    if (rippleTimeoutRef.current) clearTimeout(rippleTimeoutRef.current)
+  }, [])
 
   const toggleTheme = () => {
     const isCurrentlyDark = document.documentElement.classList.contains('dark')
@@ -39,18 +53,35 @@ export function SiteHeader() {
       ),
     )
     const root = document.documentElement
-    root.style.setProperty('--theme-x', `${x}px`)
-    root.style.setProperty('--theme-y', `${y}px`)
-    root.style.setProperty('--theme-r', `${endRadius}px`)
+    root.style.setProperty('--ripple-x', `${x}px`)
+    root.style.setProperty('--ripple-y', `${y}px`)
+    root.style.setProperty('--ripple-radius', `${endRadius}px`)
 
-    const transition = viewTransitionDocument.startViewTransition(() => {
-      root.classList.add('theme-transitioning')
-      root.classList.toggle('dark', nextTheme === 'dark')
-      root.classList.toggle('light', nextTheme === 'light')
-      root.style.colorScheme = nextTheme
-      flushSync(() => setTheme(nextTheme))
-    })
-    void transition.ready.then(async () => {
+    root.classList.add('theme-transitioning')
+    const rippleId = ++rippleSequenceRef.current
+    setThemeRipple({ x, y, radius: endRadius, id: rippleId })
+    if (rippleTimeoutRef.current) clearTimeout(rippleTimeoutRef.current)
+    rippleTimeoutRef.current = setTimeout(() => {
+      setThemeRipple((current) => current?.id === rippleId ? null : current)
+      rippleTimeoutRef.current = null
+    }, 950)
+
+    let transition: ReturnType<NonNullable<ViewTransitionDocument['startViewTransition']>>
+    try {
+      transition = viewTransitionDocument.startViewTransition(() => {
+        root.classList.toggle('dark', nextTheme === 'dark')
+        root.classList.toggle('light', nextTheme === 'light')
+        root.style.colorScheme = nextTheme
+        flushSync(() => setTheme(nextTheme))
+      })
+    } catch (transitionError) {
+      root.classList.remove('theme-transitioning')
+      setThemeRipple(null)
+      setTheme(nextTheme)
+      console.error('Unable to start theme transition:', transitionError)
+      return
+    }
+    void transition.ready.then(() => {
       root.animate(
         {
           clipPath: [
@@ -59,7 +90,7 @@ export function SiteHeader() {
           ],
         },
         {
-          duration: 750,
+          duration: 780,
           easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
           pseudoElement: '::view-transition-new(root)',
         },
@@ -75,7 +106,8 @@ export function SiteHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur-md">
+    <>
+      <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur-md">
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-2 px-3 py-2 sm:gap-3 sm:px-4">
         <a href="/" aria-label="DawaDaam home" className="rounded-md">
           <Logo isLive={isLive} />
@@ -87,7 +119,7 @@ export function SiteHeader() {
             variant="ghost"
             size="icon"
             onClick={toggleTheme}
-            className="h-8 w-8 rounded-full"
+            className="h-8 w-8 rounded-full transition-transform duration-500 ease-out active:scale-90"
           >
             <Sun className="h-4 w-4 rotate-0 scale-100 transition-transform duration-500 dark:-rotate-90 dark:scale-0" />
             <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-transform duration-500 dark:rotate-0 dark:scale-100" />
@@ -118,6 +150,24 @@ export function SiteHeader() {
           </button>
         </div>
       </div>
-    </header>
+      </header>
+      {themeRipple && typeof document !== 'undefined' && createPortal(
+        <div
+          key={themeRipple.id}
+          className="theme-water-ripple-overlay"
+          style={{
+            '--ripple-x': `${themeRipple.x}px`,
+            '--ripple-y': `${themeRipple.y}px`,
+            '--ripple-radius': `${themeRipple.radius}px`,
+          } as CSSProperties}
+          aria-hidden="true"
+        >
+          <span className="water-ring-1" />
+          <span className="water-ring-2" />
+          <span className="water-ring-3" />
+        </div>,
+        document.body,
+      )}
+    </>
   )
 }
