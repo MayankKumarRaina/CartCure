@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Refresh popular medicine prices
         env:
-          APP_URL: ${{ vars.APP_URL || vars.DAWADAAM_URL || 'https://cartcure.in' }}
+          APP_URL: ${{ vars.APP_URL || vars.DAWADAAM_URL || 'https://dawadaam.in' }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           test -n "$CRON_SECRET"
