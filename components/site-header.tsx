@@ -1,5 +1,5 @@
 'use client'
-import { type MouseEvent } from "react"
+import { useRef } from "react"
 import { flushSync } from "react-dom"
 import { useTheme } from "next-themes"
 import { Moon, Sun } from "lucide-react"
@@ -11,15 +11,17 @@ import { useCart } from '@/components/cart-provider'
 import { InstallChip } from '@/components/install-chip'
 
 type ViewTransitionDocument = Document & {
-  startViewTransition?: (callback: () => void) => { ready: Promise<void> }
+  startViewTransition?: (callback: () => void) => { ready: Promise<void>; finished: Promise<void> }
 }
 
 export function SiteHeader() {
   const { totalItems, setOpen, isLive } = useCart()
-  const { theme, resolvedTheme, setTheme } = useTheme()
+  const { setTheme } = useTheme()
+  const themeBtnRef = useRef<HTMLButtonElement>(null)
 
-  const toggleTheme = (event: MouseEvent<HTMLButtonElement>) => {
-    const nextTheme = (resolvedTheme ?? theme) === 'dark' ? 'light' : 'dark'
+  const toggleTheme = () => {
+    const isCurrentlyDark = document.documentElement.classList.contains('dark')
+    const nextTheme = isCurrentlyDark ? 'light' : 'dark'
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const viewTransitionDocument = document as ViewTransitionDocument
     if (!viewTransitionDocument.startViewTransition || reducedMotion) {
@@ -27,18 +29,29 @@ export function SiteHeader() {
       return
     }
 
-    const rect = event.currentTarget.getBoundingClientRect()
-    const x = rect.left + rect.width / 2
-    const y = rect.top + rect.height / 2
-    const endRadius = Math.hypot(
-      Math.max(x, window.innerWidth - x),
-      Math.max(y, window.innerHeight - y),
+    const rect = themeBtnRef.current?.getBoundingClientRect()
+    const x = rect ? Math.round(rect.left + rect.width / 2) : window.innerWidth - 56
+    const y = rect ? Math.round(rect.top + rect.height / 2) : 28
+    const endRadius = Math.ceil(
+      Math.hypot(
+        Math.max(x, window.innerWidth - x),
+        Math.max(y, window.innerHeight - y),
+      ),
     )
+    const root = document.documentElement
+    root.style.setProperty('--theme-x', `${x}px`)
+    root.style.setProperty('--theme-y', `${y}px`)
+    root.style.setProperty('--theme-r', `${endRadius}px`)
+
     const transition = viewTransitionDocument.startViewTransition(() => {
+      root.classList.add('theme-transitioning')
+      root.classList.toggle('dark', nextTheme === 'dark')
+      root.classList.toggle('light', nextTheme === 'light')
+      root.style.colorScheme = nextTheme
       flushSync(() => setTheme(nextTheme))
     })
-    void transition.ready.then(() => {
-      document.documentElement.animate(
+    void transition.ready.then(async () => {
+      root.animate(
         {
           clipPath: [
             `circle(0px at ${x}px ${y}px)`,
@@ -46,13 +59,18 @@ export function SiteHeader() {
           ],
         },
         {
-          duration: 550,
+          duration: 750,
           easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
           pseudoElement: '::view-transition-new(root)',
         },
       )
     }).catch((transitionError: unknown) => {
       console.error('Unable to animate theme transition:', transitionError)
+    })
+    void transition.finished.finally(() => {
+      root.classList.remove('theme-transitioning')
+    }).catch((transitionError: unknown) => {
+      console.error('Theme transition did not finish cleanly:', transitionError)
     })
   }
 
@@ -65,6 +83,7 @@ export function SiteHeader() {
         <div className="flex items-center gap-2">
           <InstallChip />
           <Button
+            ref={themeBtnRef}
             variant="ghost"
             size="icon"
             onClick={toggleTheme}
