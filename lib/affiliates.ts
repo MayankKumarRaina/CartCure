@@ -6,6 +6,11 @@ export const AFFILIATE_LINKS: Record<string, string> = {
   truebasics: 'https://bitli.in/flUn3nX',
 }
 
+export const WELLNESS_PARTNERS = [
+  { id: 'healthkart', name: 'HealthKart', badge: 'HK' },
+  { id: 'truebasics', name: 'TrueBasics', badge: 'TB' },
+] as const
+
 export function getAffiliateUrl(platformKey: string, fallbackUrl: string): string {
-  return AFFILIATE_LINKS[platformKey.toLowerCase()] || fallbackUrl
+  return AFFILIATE_LINKS[platformKey.trim().toLowerCase()] || fallbackUrl
 }

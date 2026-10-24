@@ -2,20 +2,163 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Check, ExternalLink, FileText, Minus, Plus } from 'lucide-react'
-import { PLATFORMS, type CatalogMedicine } from '@/lib/data'
-import { formatINR, lowestPlatformFor } from '@/lib/pricing'
+import { ArrowDown, Check, ChevronDown, FileText, Minus, Plus, ShoppingCart } from 'lucide-react'
+import { PLATFORMS, type CatalogMedicine, type Platform, type PlatformId } from '@/lib/data'
+import { formatINR } from '@/lib/pricing'
 import { useCart } from '@/components/cart-provider'
-import { getAffiliateUrl } from '@/lib/affiliates'
+import { getAffiliateUrl, WELLNESS_PARTNERS } from '@/lib/affiliates'
 import { cn } from '@/lib/utils'
+
+type DosageForm = 'tablet' | 'capsule' | 'syrup' | 'injection' | 'topical' | 'drops' | 'inhaler'
+
+function dosageFormFor(medicine: CatalogMedicine): DosageForm {
+  const details = `${medicine.name} ${medicine.pack}`.toLowerCase()
+  if (/capsule|\bcap\b/.test(details)) return 'capsule'
+  if (/syrup|suspension|liquid/.test(details)) return 'syrup'
+  if (/injection|\bvial\b/.test(details)) return 'injection'
+  if (/cream|gel|ointment/.test(details)) return 'topical'
+  if (/drops?/.test(details)) return 'drops'
+  if (/inhaler/.test(details)) return 'inhaler'
+  return 'tablet'
+}
+
+function DosageIllustration({ form }: { form: DosageForm }) {
+  if (form === 'capsule') {
+    return (
+      <svg viewBox="0 0 56 56" className="size-11" role="img" aria-label="Capsule">
+        <defs>
+          <linearGradient id="capsule-red" x1="0" x2="1" y1="0" y2="1">
+            <stop stopColor="#ff7777" />
+            <stop offset="1" stopColor="#b91c35" />
+          </linearGradient>
+          <linearGradient id="capsule-white" x1="0" x2="1" y1="0" y2="1">
+            <stop stopColor="#fff" />
+            <stop offset="1" stopColor="#cbd5e1" />
+          </linearGradient>
+        </defs>
+        <g transform="rotate(-38 28 28)">
+          <rect x="17" y="11" width="22" height="34" rx="11" fill="url(#capsule-red)" />
+          <path d="M17 28h22v6a11 11 0 0 1-22 0z" fill="url(#capsule-white)" />
+          <path d="M20 17a8 8 0 0 1 13-2" fill="none" stroke="#fff" strokeOpacity=".7" strokeWidth="2" strokeLinecap="round" />
+          <path d="M18 28h20" stroke="#94a3b8" strokeOpacity=".7" />
+        </g>
+      </svg>
+    )
+  }
+
+  if (form === 'syrup') {
+    return (
+      <svg viewBox="0 0 56 56" className="size-11" role="img" aria-label="Syrup bottle">
+        <defs>
+          <linearGradient id="syrup-glass" x1="0" x2="1" y1="0" y2="1">
+            <stop stopColor="#fbbf24" />
+            <stop offset=".55" stopColor="#b45309" />
+            <stop offset="1" stopColor="#78350f" />
+          </linearGradient>
+        </defs>
+        <path d="M22 8h12v7l4 5v25a3 3 0 0 1-3 3H21a3 3 0 0 1-3-3V20l4-5z" fill="url(#syrup-glass)" stroke="#fcd34d" strokeWidth="1.4" />
+        <path d="M21 25h14v10H21z" rx="2" fill="#fef3c7" />
+        <path d="M23 11h10v4H23z" rx="1" fill="#e2e8f0" />
+        <path d="M22 22h12" stroke="#fff" strokeOpacity=".6" strokeWidth="1.5" strokeLinecap="round" />
+        <path d="M21 39h14" stroke="#fbbf24" strokeOpacity=".8" strokeWidth="2" />
+      </svg>
+    )
+  }
+
+  if (form === 'injection') {
+    return (
+      <svg viewBox="0 0 56 56" className="size-11" role="img" aria-label="Medicine vial">
+        <path d="M23 10h10v7l4 4v23a3 3 0 0 1-3 3H22a3 3 0 0 1-3-3V21l4-4z" fill="#dbeafe" fillOpacity=".9" stroke="#93c5fd" strokeWidth="1.5" />
+        <path d="M22 29h12v11H22z" fill="#60a5fa" fillOpacity=".7" />
+        <path d="M22 13h12v4H22z" rx="1" fill="#f8fafc" stroke="#94a3b8" />
+        <path d="M28 4v6m-3-3h6" stroke="#f8fafc" strokeWidth="2" strokeLinecap="round" />
+        <path d="M22 23h12" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    )
+  }
+
+  if (form === 'topical') {
+    return (
+      <svg viewBox="0 0 56 56" className="size-11" role="img" aria-label="Cream tube">
+        <defs>
+          <linearGradient id="tube" x1="0" x2="1" y1="0" y2="1">
+            <stop stopColor="#f8fafc" />
+            <stop offset="1" stopColor="#94a3b8" />
+          </linearGradient>
+        </defs>
+        <path d="m17 13 23 3-5 27-18-2z" fill="url(#tube)" stroke="#cbd5e1" strokeWidth="1.3" />
+        <path d="m19 20 18 2-2 10-18-2z" fill="#38bdf8" />
+        <path d="m17 41 18 2-1 5-16-2z" fill="#e2e8f0" stroke="#94a3b8" />
+        <path d="m22 17 12 2" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    )
+  }
+
+  if (form === 'drops') {
+    return (
+      <svg viewBox="0 0 56 56" className="size-11" role="img" aria-label="Medicine drops">
+        <path d="M28 8c-5 8-12 15-12 23a12 12 0 0 0 24 0c0-8-7-15-12-23z" fill="#38bdf8" stroke="#bae6fd" strokeWidth="1.5" />
+        <path d="M22 30a7 7 0 0 0 5 8" fill="none" stroke="#e0f2fe" strokeWidth="2" strokeLinecap="round" />
+        <circle cx="22" cy="17" r="3" fill="#f8fafc" />
+      </svg>
+    )
+  }
+
+  if (form === 'inhaler') {
+    return (
+      <svg viewBox="0 0 56 56" className="size-11" role="img" aria-label="Inhaler">
+        <path d="M21 13h17a3 3 0 0 1 3 3v7H24v20a3 3 0 0 1-3 3h-3V20a7 7 0 0 1 3-7z" fill="#22c55e" stroke="#86efac" strokeWidth="1.5" />
+        <path d="M24 23h17v8H24z" fill="#f8fafc" />
+        <path d="M27 17h9" stroke="#dcfce7" strokeWidth="2" strokeLinecap="round" />
+        <path d="M20 46h-6v-5h9" fill="#cbd5e1" stroke="#94a3b8" />
+      </svg>
+    )
+  }
+
+  return (
+    <svg viewBox="0 0 56 56" className="size-11" role="img" aria-label="Tablets">
+      <defs>
+        <linearGradient id="tablet" x1="0" x2="1" y1="0" y2="1">
+          <stop stopColor="#fff" />
+          <stop offset="1" stopColor="#cbd5e1" />
+        </linearGradient>
+      </defs>
+      <g transform="rotate(-26 28 28)">
+        <rect x="10" y="11" width="17" height="29" rx="8.5" fill="url(#tablet)" stroke="#f8fafc" />
+        <path d="M10 25.5h17" stroke="#94a3b8" strokeOpacity=".7" />
+        <rect x="29" y="17" width="17" height="29" rx="8.5" fill="url(#tablet)" stroke="#f8fafc" />
+        <path d="M29 31.5h17" stroke="#94a3b8" strokeOpacity=".7" />
+      </g>
+      <ellipse cx="17" cy="17" rx="4" ry="2" fill="#fff" fillOpacity=".9" transform="rotate(-26 17 17)" />
+      <ellipse cx="36" cy="23" rx="4" ry="2" fill="#fff" fillOpacity=".9" transform="rotate(-26 36 23)" />
+    </svg>
+  )
+}
+
+const BRAND_STYLES: Record<PlatformId, string> = {
+  apollo: 'bg-[#E03C31] text-white',
+  tata1mg: 'bg-[#6F2DBD] text-white',
+  netmeds: 'bg-white text-[#24AEB1]',
+  pharmeasy: 'bg-[#10847E] text-white',
+  truemeds: 'bg-[#1E40AF] text-white',
+  medplus: 'bg-[#D9232D] text-white',
+}
+
+function pharmacyUrl(platform: Platform, medicine: CatalogMedicine) {
+  return getAffiliateUrl(platform.id, medicine.productUrls?.[platform.id] ?? platform.searchUrl(medicine.name))
+}
 
 export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
   const { items, add, increment, decrement, loadingPriceIds, resolveLivePrices } = useCart()
   const qty = items[medicine.id] ?? 0
   const isPriceLoading = loadingPriceIds.has(medicine.id)
-  const hasAnyLivePrices = medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.length > 0
-  const lowestId = lowestPlatformFor(medicine)
-  const lowestPrice = medicine.prices[lowestId]
+  const pricedPlatforms = PLATFORMS.filter(({ id }) => (
+    medicine.prices[id] > 0
+    && (medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.includes(id))
+  )).sort((a, b) => medicine.prices[a.id] - medicine.prices[b.id])
+  const winner = pricedPlatforms[0]
+  const runnerUps = (winner ? pricedPlatforms.slice(1) : PLATFORMS).slice(0, 3)
+  const [isExpanded, setIsExpanded] = useState(false)
   const [justAdded, setJustAdded] = useState(false)
   const cardRef = useRef<HTMLElement>(null)
 
@@ -24,19 +167,34 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
     if (!element) return
 
     if (typeof IntersectionObserver === 'undefined') {
-      void resolveLivePrices(medicine).catch(() => {})
+      void resolveLivePrices(medicine).catch((error: unknown) => {
+        console.error(`Unable to refresh prices for ${medicine.id}:`, error)
+      })
       return
     }
 
     const observer = new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting)) {
         observer.disconnect()
-        void resolveLivePrices(medicine).catch(() => {})
+        void resolveLivePrices(medicine).catch((error: unknown) => {
+          console.error(`Unable to refresh prices for ${medicine.id}:`, error)
+        })
       }
     }, { rootMargin: '80px' })
     observer.observe(element)
     return () => observer.disconnect()
   }, [medicine, resolveLivePrices])
+
+  function showOffers() {
+    void resolveLivePrices(medicine).catch((error: unknown) => {
+      console.error(`Unable to refresh prices for ${medicine.id}:`, error)
+    })
+  }
+
+  function toggleComparison() {
+    setIsExpanded((current) => !current)
+    if (!winner) showOffers()
+  }
 
   const handleAdd = () => {
     add(medicine.id)
@@ -53,99 +211,122 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
       transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-      className="flex flex-col gap-3 rounded-2xl border bg-card p-3 sm:p-4"
+      className="flex flex-col rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950 sm:p-4"
       aria-labelledby={`${medicine.id}-title`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <h3 id={`${medicine.id}-title`} className="text-sm font-semibold leading-snug text-pretty">
+      <div className="flex min-w-0 items-start gap-2.5">
+        <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl border border-slate-700/60 bg-slate-800/90">
+          <DosageIllustration form={dosageFormFor(medicine)} />
+        </div>
+        <div className="min-w-0 flex-1 pt-0.5">
+          <h3 id={`${medicine.id}-title`} className="text-base font-bold leading-snug text-slate-900 dark:text-white sm:text-lg">
             {medicine.name}
           </h3>
-          <p className="line-clamp-1 text-[11px] text-muted-foreground">
+          <p className="truncate text-xs text-slate-500 dark:text-slate-400">
             {medicine.pack} <span aria-hidden="true">·</span> {medicine.manufacturer}
           </p>
-          <p className="line-clamp-1 text-[11px] text-muted-foreground">
-            <span className="font-medium text-foreground/80">Salt:</span> {medicine.salt}
-          </p>
+          <p className="mt-0.5 truncate text-xs text-slate-600 dark:text-slate-300">{medicine.salt}</p>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
+        <div className="flex shrink-0 flex-col items-end pt-0.5">
           {medicine.rxRequired && (
-            <span className="inline-flex items-center gap-1 rounded-md border bg-background px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/80 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
               <FileText className="size-3" aria-hidden="true" />
-              Rx
+              RX
             </span>
           )}
-          <span className="text-[10px] text-muted-foreground">
-            MRP <span className="line-through">{formatINR(medicine.mrp)}</span>
-          </span>
+          <span className="mt-1.5 text-xs text-slate-400">MRP {formatINR(medicine.mrp)}</span>
         </div>
       </div>
 
-      <ul className="grid grid-cols-3 gap-1.5 sm:gap-2" aria-label="Price on each platform">
-        {PLATFORMS.map((p) => {
-          const isLowest = hasAnyLivePrices && !isPriceLoading && p.id === lowestId
-          const hasLivePrice = medicine.livePricePlatforms?.includes(p.id) ?? true
-          return (
-            <li
-              key={p.id}
-              className={cn(
-                'relative min-w-0 rounded-xl border bg-background',
-                isLowest && 'border-success/40 bg-success-soft',
-              )}
-            >
-              {isLowest && (
-                <span className="absolute -top-1.5 right-1 z-10 rounded-md bg-success px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-success-foreground">
+      <div className="mt-3 flex items-stretch gap-2">
+        {winner ? (
+          <a
+            href={pharmacyUrl(winner, medicine)}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`View ${medicine.name} at ${winner.name} for ${formatINR(medicine.prices[winner.id])}`}
+            className="flex min-w-0 flex-1 items-center justify-between rounded-xl border border-emerald-500/35 bg-emerald-50 px-3 py-2 transition-colors hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-950/70"
+          >
+            <span className="min-w-0">
+              <span className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400 sm:text-2xl">
+                  {formatINR(medicine.prices[winner.id])}
+                </span>
+                <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-950">
                   Lowest
                 </span>
-              )}
-              <a
-                href={getAffiliateUrl(p.id, p.searchUrl(medicine.name))}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`View ${medicine.name} at ${p.name}`}
-                className="flex min-h-[52px] min-w-0 items-center justify-between gap-1.5 rounded-xl px-2.5 py-1.5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-[11px] font-medium leading-tight text-slate-400">
-                    {p.id === 'tata1mg' ? 'Tata 1mg' : p.shortName}
-                  </span>
-                  {isPriceLoading ? (
-                    <span className="mt-1 block h-4 w-12 animate-pulse rounded bg-muted" aria-label="Loading price" />
-                  ) : hasLivePrice ? (
-                    <span
-                      className={cn(
-                        'mt-0.5 block truncate text-sm font-bold leading-tight tracking-tight tabular-nums sm:text-[15px]',
-                        isLowest ? 'text-success' : 'text-foreground',
-                      )}
-                    >
-                      {formatINR(medicine.prices[p.id])}
-                    </span>
-                  ) : (
-                    <span className="mt-0.5 block text-sm font-medium leading-tight text-muted-foreground">
-                      —
-                    </span>
-                  )}
-                </span>
-                <ExternalLink className="size-3 shrink-0 text-muted-foreground/70" aria-hidden="true" />
-                <span className="sr-only">{isLowest ? 'Lowest base price' : ''}</span>
-              </a>
-            </li>
-          )
-        })}
-      </ul>
-
-      <div className="flex items-center justify-between gap-2">
-        {isPriceLoading ? (
-          <span className="h-3 w-28 animate-pulse rounded bg-muted" aria-label="Recalculating savings" />
-        ) : !hasAnyLivePrices ? (
-          <p className="text-xs text-muted-foreground">Add to basket to compare live prices</p>
+              </span>
+              <span className="block text-[11px] font-medium text-emerald-700/90 dark:text-emerald-400/90">
+                Save {formatINR(Math.max(0, medicine.mrp - medicine.prices[winner.id]))} vs MRP
+              </span>
+            </span>
+            <span className="mx-2.5 h-6 w-px shrink-0 bg-emerald-500/20" aria-hidden="true" />
+            <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
+              <span className="truncate">{winner.shortName}</span>
+              <ArrowDown className="size-3 shrink-0 -rotate-45" aria-hidden="true" />
+            </span>
+          </a>
         ) : (
-          <p className="text-[11px] text-muted-foreground">
-            Save up to{' '}
-            <span className="font-semibold text-success">{formatINR(medicine.mrp - lowestPrice)}</span>{' '}
-            vs MRP
-          </p>
+          <button
+            type="button"
+            onClick={showOffers}
+            aria-busy={isPriceLoading}
+            className="flex min-w-0 flex-1 items-center justify-between rounded-xl border border-emerald-500/35 bg-emerald-50 px-3 py-2 text-left dark:bg-emerald-950/40"
+          >
+            <span>
+              <span className="block text-xl font-extrabold text-emerald-600 dark:text-emerald-400 sm:text-2xl">
+                ₹---
+              </span>
+              <span className="text-[11px] font-medium text-emerald-700/90 dark:text-emerald-400/90">
+                View offers
+              </span>
+              {isPriceLoading && <span className="sr-only">Checking live prices</span>}
+            </span>
+            <ArrowDown className="size-4 shrink-0 -rotate-45 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+          </button>
         )}
+        <button
+          type="button"
+          onClick={toggleComparison}
+          aria-expanded={isExpanded}
+          className="flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-teal-400"
+        >
+          Compare {PLATFORMS.length}
+          <ChevronDown className={cn('size-3.5 transition-transform', isExpanded && 'rotate-180')} aria-hidden="true" />
+        </button>
+      </div>
+
+      <div className="mt-2.5 flex min-w-0 items-center gap-1.5 overflow-x-auto pb-0.5">
+        {runnerUps.map((platform) => (
+          <a
+            key={platform.id}
+            href={pharmacyUrl(platform, medicine)}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`View ${medicine.name} at ${platform.shortName}`}
+            className="flex min-w-0 flex-1 items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900/80 px-2 py-1.5"
+          >
+            <span className={cn('flex size-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold', BRAND_STYLES[platform.id])}>
+              {platform.id === 'tata1mg' ? '1mg' : platform.id === 'netmeds' ? '+' : platform.shortName.slice(0, 2)}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-[10px] text-slate-400">{platform.shortName}</span>
+              <span className="block truncate text-xs font-bold text-white">
+                {medicine.prices[platform.id] > 0 && (medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.includes(platform.id))
+                  ? formatINR(medicine.prices[platform.id])
+                  : '₹---'}
+              </span>
+            </span>
+          </a>
+        ))}
+        <button
+          type="button"
+          onClick={toggleComparison}
+          aria-expanded={isExpanded}
+          className="shrink-0 rounded-xl border border-slate-800 bg-slate-900/60 px-2 py-1.5 text-center text-[10px] font-semibold text-slate-300"
+        >
+          +{Math.max(0, PLATFORMS.length - (winner ? 4 : 3))} more
+        </button>
 
         <AnimatePresence mode="popLayout" initial={false}>
           {qty === 0 || justAdded ? (
@@ -159,23 +340,12 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ type: 'spring', stiffness: 500, damping: 30 }}
               className={cn(
-                'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors',
-                justAdded
-                  ? 'bg-success text-success-foreground'
-                  : 'bg-primary text-primary-foreground hover:bg-primary/90',
+                'inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-400 px-3.5 py-2.5 text-xs font-bold text-slate-950 transition-colors hover:bg-emerald-300 sm:text-sm',
+                justAdded && 'bg-emerald-500',
               )}
             >
-              {justAdded ? (
-                <>
-                  <Check className="size-4" aria-hidden="true" />
-                  Added
-                </>
-              ) : (
-                <>
-                  <Plus className="size-4" aria-hidden="true" />
-                  Add to Basket
-                </>
-              )}
+              {justAdded ? <Check className="size-4" aria-hidden="true" /> : <ShoppingCart className="size-4" aria-hidden="true" />}
+              {justAdded ? 'Added' : 'Add'}
             </motion.button>
           ) : (
             <motion.div
@@ -184,24 +354,22 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-              className="flex h-9 items-center rounded-lg border bg-background"
+              className="flex h-10 shrink-0 items-center rounded-xl border border-emerald-500/40 bg-slate-900"
             >
               <button
                 type="button"
                 onClick={() => decrement(medicine.id)}
                 aria-label={`Decrease ${medicine.name} quantity`}
-                className="flex size-9 items-center justify-center rounded-l-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="flex size-9 items-center justify-center rounded-l-xl text-slate-300 hover:bg-slate-800"
               >
                 <Minus className="size-4" aria-hidden="true" />
               </button>
-              <span className="min-w-8 text-center text-sm font-semibold tabular-nums" aria-live="polite">
-                {qty}
-              </span>
+              <span className="min-w-6 text-center text-sm font-semibold text-white tabular-nums" aria-live="polite">{qty}</span>
               <button
                 type="button"
                 onClick={() => increment(medicine.id)}
                 aria-label={`Increase ${medicine.name} quantity`}
-                className="flex size-9 items-center justify-center rounded-r-lg text-primary hover:bg-primary-soft"
+                className="flex size-9 items-center justify-center rounded-r-xl text-emerald-400 hover:bg-slate-800"
               >
                 <Plus className="size-4" aria-hidden="true" />
               </button>
@@ -209,6 +377,67 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
           )}
         </AnimatePresence>
       </div>
+
+      <AnimatePresence initial={false}>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-3 grid gap-2 border-t border-slate-800 pt-3">
+              {PLATFORMS.map((platform) => {
+                const hasPrice = medicine.prices[platform.id] > 0
+                  && (medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.includes(platform.id))
+                return (
+                  <a
+                    key={platform.id}
+                    href={pharmacyUrl(platform, medicine)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`View ${medicine.name} at ${platform.name}`}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2"
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className={cn('flex size-7 shrink-0 items-center justify-center rounded-full text-[9px] font-bold', BRAND_STYLES[platform.id])}>
+                        {platform.id === 'tata1mg' ? '1mg' : platform.id === 'netmeds' ? '+' : platform.shortName.slice(0, 2)}
+                      </span>
+                      <span className="truncate text-sm font-medium text-slate-200">{platform.name}</span>
+                    </span>
+                    <span className="shrink-0 text-sm font-bold text-white">
+                      {hasPrice ? formatINR(medicine.prices[platform.id]) : isPriceLoading ? 'Checking…' : 'View offers'}
+                    </span>
+                  </a>
+                )
+              })}
+              {WELLNESS_PARTNERS.map((partner) => (
+                <a
+                  key={partner.id}
+                  href={getAffiliateUrl(partner.id, `https://${partner.id}.com`)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-teal-900/70 bg-teal-950/30 px-3 py-2"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className={cn(
+                      'flex size-7 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white',
+                      partner.id === 'healthkart' ? 'bg-[#00B5B7]' : 'bg-[#0F766E]',
+                    )}>
+                      {partner.badge}
+                    </span>
+                    <span className="truncate text-sm font-medium text-slate-200">{partner.name}</span>
+                  </span>
+                  <span className="shrink-0 text-right text-[10px] font-semibold text-teal-300">
+                    Wellness &amp; Vitamin Partner — Check Deals →
+                  </span>
+                </a>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.article>
   )
 }

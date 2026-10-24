@@ -1,34 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  Activity,
-  Apple,
-  Baby,
-  Brain,
-  Brush,
-  Bug,
-  Dna,
-  Droplet,
-  Droplets,
-  Ear,
-  Eye,
-  FlameKindling,
-  HeartPulse,
-  PackagePlus,
-  Pill,
-  RefreshCw,
-  ScanEye,
-  Search,
-  SearchX,
-  ShieldAlert,
-  ShieldCheck,
-  Sparkles,
-  Syringe,
-  Wind,
-  Zap,
-} from 'lucide-react'
-import { CATEGORIES, MEDICINES, type Category, type Medicine, type PharmacyPrice } from '@/lib/data'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowUpDown, ChevronDown, RefreshCw, ScanLine, Search, SearchX, SlidersHorizontal, X } from 'lucide-react'
+import { CATEGORIES, MEDICINES, PLATFORMS, type Category, type Medicine, type PharmacyPrice } from '@/lib/data'
 import { useCart } from '@/components/cart-provider'
 import LoadingResearcher from '@/components/loading-researcher'
 import { MedicineCard } from '@/components/medicine-card'
@@ -36,38 +10,18 @@ import { mapMedicine } from '@/lib/medicines'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 
+const MedicineScannerModal = lazy(() => import('@/components/medicine-scanner-modal').then(
+  ({ MedicineScannerModal: ScannerModal }) => ({ default: ScannerModal }),
+))
+
 const INITIAL_MEDICINE_LIMIT = 50
 const APPEND_MEDICINE_LIMIT = 10
 const BROWSE_MEDICINE_CAP = 120
 const LIVE_PRICE_PAGE_SIZE = 50
 const MEDICINE_CACHE_KEY = 'dawadaam_cached_popular_v1'
 
-const CATEGORY_ICONS: Record<Category, typeof Activity> = {
-  'Anti Diabetic': Activity,
-  'Anti Infectives': ShieldCheck,
-  'Anti Malarials': Bug,
-  'Anti Neoplastics': ShieldAlert,
-  'Blood Related': Droplet,
-  Cardiac: HeartPulse,
-  Derma: Sparkles,
-  'Gastro Intestinal': Pill,
-  Gynaecological: Baby,
-  Hormones: Dna,
-  'Neuro Cns': Brain,
-  Ophthal: Eye,
-  'Ophthal Otologicals': ScanEye,
-  Others: PackagePlus,
-  Otologicals: Ear,
-  'Pain Analgesics': Zap,
-  Respiratory: Wind,
-  'Sex Stimulants Rejuvenators': FlameKindling,
-  Stomatologicals: Brush,
-  Urology: Droplets,
-  Vaccines: Syringe,
-  'Vitamins Minerals Nutrients': Apple,
-}
-
 type CatalogMedicine = ReturnType<typeof mapMedicine>
+type SortMode = 'lowest-price' | 'most-popular' | 'highest-savings' | 'name'
 type PendingLivePage = {
   category: Category | null
   searchTerm: string | null
@@ -209,6 +163,7 @@ export function MedicineSearch() {
   const [browseMedicines, setBrowseMedicines] = useState<CatalogMedicine[]>([])
   const [selectedMedicine, setSelectedMedicine] = useState<CatalogMedicine | null>(null)
   const [activeCategory, setActiveCategory] = useState<Category | null>(null)
+  const [sortMode, setSortMode] = useState<SortMode>('lowest-price')
   const [isBrowseLoading, setIsBrowseLoading] = useState(true)
   const [isAppending, setIsAppending] = useState(false)
   const [isLoadingLivePage, setIsLoadingLivePage] = useState(false)
@@ -218,6 +173,7 @@ export function MedicineSearch() {
   const [error, setError] = useState<string | null>(null)
   const [livePageError, setLivePageError] = useState<string | null>(null)
   const [loadingSelectedMedicine, setLoadingSelectedMedicine] = useState(false)
+  const [isScannerOpen, setIsScannerOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const browseSentinelRef = useRef<HTMLDivElement>(null)
   const operationId = useRef(0)
@@ -447,6 +403,14 @@ export function MedicineSearch() {
       if (currentOperation === operationId.current) setIsBrowseLoading(false)
     }
   }, [browseMedicines.length, registerMedicines])
+
+  function searchScannedCandidate(candidate: string) {
+    const term = candidate.trim()
+    if (!term) return
+    setIsScannerOpen(false)
+    updateQuery(term)
+    void submitSearch(term)
+  }
 
   const appendBrowseMedicines = useCallback(async () => {
     if (
@@ -695,6 +659,23 @@ export function MedicineSearch() {
   const selectedCatalogMedicine = selectedMedicine
     ? catalogMedicines.find(({ id }) => id === selectedMedicine.id) ?? selectedMedicine
     : null
+  const sortedBrowseMedicines = useMemo(() => {
+    const medicines = [...browseMedicines]
+    const lowestPrice = (medicine: CatalogMedicine) => {
+      const prices = PLATFORMS
+        .filter(({ id }) => medicine.prices[id] > 0
+          && (medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.includes(id)))
+        .map(({ id }) => medicine.prices[id])
+      return prices.length > 0 ? Math.min(...prices) : Number.POSITIVE_INFINITY
+    }
+
+    if (sortMode === 'lowest-price') medicines.sort((a, b) => lowestPrice(a) - lowestPrice(b))
+    if (sortMode === 'highest-savings') {
+      medicines.sort((a, b) => (b.mrp - lowestPrice(b)) - (a.mrp - lowestPrice(a)))
+    }
+    if (sortMode === 'name') medicines.sort((a, b) => a.name.localeCompare(b.name))
+    return medicines
+  }, [browseMedicines, sortMode])
 
   return (
     <section className="flex flex-col gap-6" aria-label="Find and compare medicines">
@@ -722,8 +703,27 @@ export function MedicineSearch() {
               value={query}
               onChange={(event) => updateQuery(event.target.value)}
               placeholder="Search medicines"
-              className="h-14 w-full rounded-2xl border bg-card pl-11 pr-4 text-[15px] text-foreground shadow-sm outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground/80 focus:border-primary/50 focus:ring-4 focus:ring-primary/10 [&::-webkit-search-cancel-button]:hidden"
+              className="h-14 w-full rounded-2xl border bg-card pl-11 pr-24 text-[15px] text-foreground shadow-sm outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground/80 focus:border-primary/50 focus:ring-4 focus:ring-primary/10 [&::-webkit-search-cancel-button]:hidden"
             />
+            {query && (
+              <button
+                type="button"
+                onClick={() => updateQuery('')}
+                aria-label="Clear medicine search"
+                className="absolute right-12 top-1/2 -translate-y-1/2 rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-800/70 hover:text-white"
+              >
+                <X className="size-4" aria-hidden="true" />
+              </button>
+            )}
+            <button
+              type="button"
+              title="Scan medicine strip or box"
+              aria-label="Scan medicine strip or box"
+              onClick={() => setIsScannerOpen(true)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-800/70 hover:text-emerald-400"
+            >
+              <ScanLine className="size-5" aria-hidden="true" />
+            </button>
           </form>
 
           {visibleSearchResults.length > 0 && (
@@ -747,32 +747,44 @@ export function MedicineSearch() {
         </div>
       </div>
 
-      <div
-        className="-mx-3 -mt-3 flex flex-wrap items-center gap-2 px-3 sm:-mx-4 sm:px-4"
-        role="group"
-        aria-label="Medicine categories"
-      >
-        {CATEGORIES.map((category) => {
-          const Icon = CATEGORY_ICONS[category]
-          const isActive = activeCategory === category
-          return (
-            <button
-              key={category}
-              type="button"
-              aria-pressed={isActive}
-              onClick={() => void loadBrowse(isActive ? null : category)}
-              className={cn(
-                'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors',
-                isActive
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'bg-background text-muted-foreground hover:border-slate-300 hover:text-foreground',
-              )}
-            >
-              <Icon className="size-3.5" aria-hidden="true" />
-              {category}
-            </button>
-          )
-        })}
+      <div className="relative my-3 grid grid-cols-2 items-center gap-3" role="group" aria-label="Filter and sort medicines">
+        <label className="relative flex min-w-0 items-center">
+          <SlidersHorizontal className="pointer-events-none absolute left-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
+          <span className="sr-only">Filter by category</span>
+          <select
+            value={activeCategory ?? ''}
+            onChange={(event) => {
+              const value = event.target.value
+              if (value === '' || value === '__clear__') {
+                void loadBrowse(null)
+              } else if (CATEGORIES.includes(value as Category)) {
+                void loadBrowse(value as Category)
+              }
+            }}
+            className="h-11 w-full min-w-0 appearance-none rounded-full border border-slate-200 bg-white pl-9 pr-8 text-xs font-semibold text-slate-800 shadow-sm outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 sm:text-sm"
+          >
+            <option value="">All medicines</option>
+            {CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+            <option value="__clear__">Clear category filter</option>
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
+        </label>
+        <span className="pointer-events-none absolute left-1/2 top-1/2 z-10 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-slate-300 dark:bg-slate-700" aria-hidden="true" />
+        <label className="relative flex min-w-0 items-center">
+          <ArrowUpDown className="pointer-events-none absolute left-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
+          <span className="sr-only">Sort medicines</span>
+          <select
+            value={sortMode}
+            onChange={(event) => setSortMode(event.target.value as SortMode)}
+            className="h-11 w-full min-w-0 appearance-none rounded-full border border-slate-200 bg-white pl-9 pr-8 text-xs font-semibold text-slate-800 shadow-sm outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 sm:text-sm"
+          >
+            <option value="lowest-price">Sort: Lowest price</option>
+            <option value="most-popular">Sort: Most popular</option>
+            <option value="highest-savings">Sort: Highest savings</option>
+            <option value="name">Sort: Name (A–Z)</option>
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
+        </label>
       </div>
 
       {error && (
@@ -816,7 +828,7 @@ export function MedicineSearch() {
       ) : browseMedicines.length > 0 ? (
         <>
           <div className="grid gap-3 md:grid-cols-2">
-            {browseMedicines.map((medicine) => (
+            {sortedBrowseMedicines.map((medicine) => (
               <MedicineCard
                 key={medicine.id}
                 medicine={catalogMedicines.find(({ id }) => id === medicine.id) ?? medicine}
@@ -884,6 +896,14 @@ export function MedicineSearch() {
             </button>
           )}
         </div>
+      )}
+      {isScannerOpen && (
+        <Suspense fallback={null}>
+          <MedicineScannerModal
+            onClose={() => setIsScannerOpen(false)}
+            onSelect={searchScannedCandidate}
+          />
+        </Suspense>
       )}
     </section>
   )
