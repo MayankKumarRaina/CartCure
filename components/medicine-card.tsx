@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Check, FileText, Minus, Plus } from 'lucide-react'
+import { Check, ExternalLink, FileText, Minus, Plus } from 'lucide-react'
 import { PLATFORMS, type CatalogMedicine } from '@/lib/data'
 import { formatINR, lowestPlatformFor } from '@/lib/pricing'
 import { useCart } from '@/components/cart-provider'
+import { getAffiliateUrl } from '@/lib/affiliates'
 import { cn } from '@/lib/utils'
 
 export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
@@ -52,35 +53,35 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
       transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-      className="flex flex-col gap-4 rounded-2xl border bg-card p-3.5 sm:p-5"
+      className="flex flex-col gap-3 rounded-2xl border bg-card p-3 sm:p-4"
       aria-labelledby={`${medicine.id}-title`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h3 id={`${medicine.id}-title`} className="text-[15px] font-semibold leading-snug text-pretty">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h3 id={`${medicine.id}-title`} className="text-sm font-semibold leading-snug text-pretty">
             {medicine.name}
           </h3>
-          <p className="text-xs text-muted-foreground">
+          <p className="line-clamp-1 text-[11px] text-muted-foreground">
             {medicine.pack} <span aria-hidden="true">·</span> {medicine.manufacturer}
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="line-clamp-1 text-[11px] text-muted-foreground">
             <span className="font-medium text-foreground/80">Salt:</span> {medicine.salt}
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           {medicine.rxRequired && (
-            <span className="inline-flex items-center gap-1 rounded-md border bg-background px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="inline-flex items-center gap-1 rounded-md border bg-background px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
               <FileText className="size-3" aria-hidden="true" />
               Rx
             </span>
           )}
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-[10px] text-muted-foreground">
             MRP <span className="line-through">{formatINR(medicine.mrp)}</span>
           </span>
         </div>
       </div>
 
-      <ul className="grid grid-cols-3 gap-2" aria-label="Price on each platform">
+      <ul className="grid grid-cols-3 gap-1.5 sm:gap-2" aria-label="Price on each platform">
         {PLATFORMS.map((p) => {
           const isLowest = hasAnyLivePrices && !isPriceLoading && p.id === lowestId
           const hasLivePrice = medicine.livePricePlatforms?.includes(p.id) ?? true
@@ -88,47 +89,58 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
             <li
               key={p.id}
               className={cn(
-                'relative flex flex-col gap-0.5 rounded-xl border bg-background p-2',
+                'relative min-w-0 rounded-xl border bg-background',
                 isLowest && 'border-success/40 bg-success-soft',
               )}
             >
               {isLowest && (
-                <span className="absolute -top-2 left-2 rounded-full bg-success px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-success-foreground sm:text-[10px]">
+                <span className="absolute -top-1.5 right-1 z-10 rounded-md bg-success px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-success-foreground">
                   Lowest
                 </span>
               )}
-              <span className="whitespace-nowrap text-[11px] font-medium text-muted-foreground">{p.name}</span>
-              {isPriceLoading ? (
-                <span className="mt-1 h-5 w-14 animate-pulse rounded bg-muted" aria-label="Loading price" />
-              ) : hasLivePrice ? (
-                <span
-                  className={cn(
-                    'text-base font-semibold tabular-nums',
-                    isLowest ? 'text-success' : 'text-foreground',
+              <a
+                href={getAffiliateUrl(p.id, p.searchUrl(medicine.name))}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`View ${medicine.name} at ${p.name}`}
+                className="flex min-h-[52px] min-w-0 items-center justify-between gap-1.5 rounded-xl px-2.5 py-1.5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-[11px] font-medium leading-tight text-slate-400">
+                    {p.id === 'tata1mg' ? 'Tata 1mg' : p.shortName}
+                  </span>
+                  {isPriceLoading ? (
+                    <span className="mt-1 block h-4 w-12 animate-pulse rounded bg-muted" aria-label="Loading price" />
+                  ) : hasLivePrice ? (
+                    <span
+                      className={cn(
+                        'mt-0.5 block truncate text-sm font-bold leading-tight tracking-tight tabular-nums sm:text-[15px]',
+                        isLowest ? 'text-success' : 'text-foreground',
+                      )}
+                    >
+                      {formatINR(medicine.prices[p.id])}
+                    </span>
+                  ) : (
+                    <span className="mt-0.5 block text-sm font-medium leading-tight text-muted-foreground">
+                      —
+                    </span>
                   )}
-                >
-                  {formatINR(medicine.prices[p.id])}
                 </span>
-              ) : (
-                <span
-                  className="text-sm font-medium text-muted-foreground"
-                >
-                  —
-                </span>
-              )}
-              <span className="sr-only">{isLowest ? 'Lowest base price' : ''}</span>
+                <ExternalLink className="size-3 shrink-0 text-muted-foreground/70" aria-hidden="true" />
+                <span className="sr-only">{isLowest ? 'Lowest base price' : ''}</span>
+              </a>
             </li>
           )
         })}
       </ul>
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-2">
         {isPriceLoading ? (
           <span className="h-3 w-28 animate-pulse rounded bg-muted" aria-label="Recalculating savings" />
         ) : !hasAnyLivePrices ? (
           <p className="text-xs text-muted-foreground">Add to basket to compare live prices</p>
         ) : (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground">
             Save up to{' '}
             <span className="font-semibold text-success">{formatINR(medicine.mrp - lowestPrice)}</span>{' '}
             vs MRP
@@ -147,7 +159,7 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ type: 'spring', stiffness: 500, damping: 30 }}
               className={cn(
-                'inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-sm font-medium transition-colors',
+                'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-colors',
                 justAdded
                   ? 'bg-success text-success-foreground'
                   : 'bg-primary text-primary-foreground hover:bg-primary/90',

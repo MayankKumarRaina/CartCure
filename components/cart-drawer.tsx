@@ -10,6 +10,7 @@ import { toCartLines, quoteAll, bestOption, formatINR } from "@/lib/pricing"
 import { MembershipMatrix } from "@/components/membership-matrix"
 import { cn } from "@/lib/utils"
 import type { PlatformId } from "@/lib/data"
+import { getAffiliateUrl } from "@/lib/affiliates"
 
 function pharmacySearchUrl(platformId: PlatformId, query: string) {
   const encodedQuery = encodeURIComponent(query)
@@ -287,9 +288,10 @@ export function CartDrawer() {
                 const productUrl = cartLines.length === 1
                   ? primaryMedicine.productUrls?.[activeQuote.platform.id]
                   : undefined
-                const targetUrl = productUrl && /^https?:\/\//i.test(productUrl)
+                const standardUrl = productUrl && /^https?:\/\//i.test(productUrl)
                   ? productUrl
                   : pharmacySearchUrl(activeQuote.platform.id, primaryMedicine.name)
+                const targetUrl = getAffiliateUrl(activeQuote.platform.id, standardUrl)
 
                 window.open(targetUrl, '_blank', 'noopener,noreferrer')
 
