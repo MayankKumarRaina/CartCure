@@ -1,3 +1,4 @@
+import { TrendingUp } from 'lucide-react'
 import { formatINR, type PlatformQuote } from '@/lib/pricing'
 import type { PlatformId } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -74,8 +75,9 @@ export function MembershipMatrix({
   onSelectPlatform: (id: PlatformId) => void
   isLoading?: boolean
 }) {
-  const selectedQuote = quotes.find((quote) => quote.platform.id === selectedPlatform)
-  const alternatives = quotes.filter((quote) => quote.platform.id !== selectedPlatform)
+  const paidPlans = quotes.filter((quote) => quote.platform.membership.fee > 0)
+  const selectedQuote = paidPlans.find((quote) => quote.platform.id === selectedPlatform) ?? paidPlans[0]
+  const alternatives = paidPlans.filter((quote) => quote.platform.id !== selectedQuote?.platform.id)
   const fasterAlternative = alternatives
     .filter((quote) => quote.worthIt && quote.refillsToBreakEven < (selectedQuote?.refillsToBreakEven ?? Infinity))
     .sort((a, b) => a.refillsToBreakEven - b.refillsToBreakEven)[0]
@@ -173,42 +175,119 @@ export function MembershipMatrix({
         *Plan fee spread across {quotes[0]?.platform.membership.durationMonths ?? 6} monthly refills of this basket.
       </p>
       {selectedQuote && (
-        <section className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4" aria-labelledby="membership-payback-heading">
-          <h3 id="membership-payback-heading" className="text-sm font-semibold text-foreground">
-            Membership Payback Analysis
-          </h3>
-          <p className="mt-2 text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground">
+        <section
+          className="rounded-2xl border border-emerald-200/80 bg-emerald-50/60 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/25"
+          aria-labelledby="break-even-heading"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white">
+              <TrendingUp className="size-4" aria-hidden="true" />
+            </span>
+            <h3 id="break-even-heading" className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              Break-even analysis
+            </h3>
+          </div>
+
+          <div className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1" aria-label="Select membership plan">
+            {paidPlans.map((quote) => {
+              const isSelected = quote.platform.id === selectedQuote.platform.id
+              return (
+                <button
+                  key={quote.platform.id}
+                  type="button"
+                  onClick={() => onSelectPlatform(quote.platform.id)}
+                  aria-pressed={isSelected}
+                  className={cn(
+                    'shrink-0 rounded-full px-3 py-1.5 text-[11px] transition-colors',
+                    isSelected
+                      ? 'bg-white font-semibold text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white'
+                      : 'text-slate-600 hover:bg-white/70 dark:text-slate-400 dark:hover:bg-slate-800/70',
+                  )}
+                >
+                  {quote.platform.shortName} {quote.platform.membership.name}
+                </button>
+              )
+            })}
+          </div>
+
+          <p className="mt-2 text-xs leading-relaxed text-slate-700 dark:text-slate-300">
+            <span className="font-semibold text-slate-900 dark:text-slate-100">
               {selectedQuote.platform.name} {selectedQuote.platform.membership.name}
             </span>
-            {' · '}
-            {selectedQuote.platform.membership.fee === 0
-              ? 'Free plan'
-              : `${formatINR(selectedQuote.platform.membership.fee)} for ${selectedQuote.platform.membership.durationMonths} months`}
-          </p>
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            Savings per monthly order: {formatINR(selectedQuote.memberBenefit)} medicine discount
-            {' + '}
-            {formatINR(selectedQuote.deliverySaved)} delivery saved
+            {' costs '}
+            <strong>{formatINR(selectedQuote.platform.membership.fee)}/{selectedQuote.platform.membership.durationMonths} mos.</strong>
+            {' On this '}
+            <strong>{formatINR(selectedQuote.subtotal)} cart</strong>
+            {`, you get ${Math.round(selectedQuote.platform.membership.benefitPct * 100)}% extra discount `}
+            <strong>({formatINR(selectedQuote.memberBenefit)})</strong>
+            {selectedQuote.platform.membership.freeDelivery
+              ? <> + free delivery saved <strong>({formatINR(selectedQuote.deliverySaved)})</strong></>
+              : ' + no delivery benefit'}
             {' = '}
-            <span className="font-semibold text-foreground">
-              {formatINR(selectedQuote.savingsPerOrder)} saved per refill
-            </span>
+            <strong className="text-emerald-700 dark:text-emerald-400">
+              {formatINR(selectedQuote.savingsPerOrder)} saved today.
+            </strong>
           </p>
-          <p className="mt-2 text-sm font-semibold leading-relaxed text-foreground">
-            {selectedQuote.platform.membership.fee === 0
-              ? 'No membership fee — instant savings from Cart #1.'
-              : selectedQuote.worthIt
-                ? `Pays for itself in ${selectedQuote.refillsToBreakEven} monthly ${selectedQuote.refillsToBreakEven === 1 ? 'refill' : 'refills'} (within ${selectedQuote.platform.membership.durationMonths} months). Over the full ${selectedQuote.platform.membership.durationMonths}-month plan, you save ${formatINR(selectedQuote.periodNetSavings)} after the membership fee.`
-                : selectedQuote.savingsPerOrder > 0
-                  ? `Not worth it for this basket — you save ${formatINR(selectedQuote.savingsPerOrder)}/month, which takes ${selectedQuote.refillsToBreakEven} months to recover the ${formatINR(selectedQuote.platform.membership.fee)} fee (plan expires in ${selectedQuote.platform.membership.durationMonths} months). Buy without membership instead.`
-                  : `Not worth it for this basket — this plan does not save on each refill, so its ${formatINR(selectedQuote.platform.membership.fee)} fee cannot be recovered within the ${selectedQuote.platform.membership.durationMonths}-month plan. Buy without membership instead.`}
+
+          <p className={cn(
+            'mt-3 flex w-full items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold',
+            selectedQuote.worthIt
+              ? 'border-emerald-200 bg-white/90 text-emerald-700 dark:border-emerald-800/70 dark:bg-slate-900/80 dark:text-emerald-300'
+              : 'border-amber-200 bg-amber-50/90 text-amber-800 dark:border-amber-900/70 dark:bg-slate-900/80 dark:text-amber-300',
+          )}>
+            <TrendingUp className="size-4 shrink-0" aria-hidden="true" />
+            {selectedQuote.savingsPerOrder > 0 && selectedQuote.worthIt
+              ? `Recovers membership fee in ${selectedQuote.refillsToBreakEven} monthly ${selectedQuote.refillsToBreakEven === 1 ? 'refill' : 'refills'}`
+              : selectedQuote.savingsPerOrder === 0
+                ? 'No savings on this basket; the plan fee will not break even'
+                : `Break-even takes ${selectedQuote.refillsToBreakEven} refills, longer than this ${selectedQuote.platform.membership.durationMonths}-month plan`}
           </p>
+
+          <div className="mt-3">
+            <div className="mb-2 flex items-center justify-between gap-2 text-[11px]">
+              <span className="text-slate-500 dark:text-slate-400">Monthly refills</span>
+              <span className={cn(
+                'font-bold',
+                selectedQuote.periodNetSavings >= 0
+                  ? 'text-emerald-700 dark:text-emerald-400'
+                  : 'text-amber-700 dark:text-amber-400',
+              )}>
+                {selectedQuote.platform.membership.durationMonths}-mo net: {selectedQuote.periodNetSavings > 0 ? '+' : ''}{formatINR(selectedQuote.periodNetSavings)}
+              </span>
+            </div>
+            <div
+              className="grid gap-1.5"
+              style={{ gridTemplateColumns: `repeat(${selectedQuote.platform.membership.durationMonths}, minmax(0, 1fr))` }}
+              aria-label={`${selectedQuote.platform.membership.durationMonths} monthly refill break-even progress`}
+            >
+              {Array.from({ length: selectedQuote.platform.membership.durationMonths }, (_, index) => {
+                const refill = index + 1
+                const recoversFeeThisRefill = selectedQuote.savingsPerOrder > 0
+                  && refill >= selectedQuote.refillsToBreakEven
+                const isBeforeBreakEven = selectedQuote.savingsPerOrder > 0
+                  && refill < selectedQuote.refillsToBreakEven
+                return (
+                  <div key={refill} className="text-center">
+                    <div className={cn(
+                      'h-2 rounded-full',
+                      recoversFeeThisRefill
+                        ? 'bg-emerald-600 dark:bg-emerald-400'
+                        : isBeforeBreakEven
+                          ? 'bg-emerald-300/70 dark:bg-emerald-800/60'
+                          : 'bg-slate-200 dark:bg-slate-700',
+                    )} />
+                    <span className="mt-1 block text-[9px] text-slate-500 dark:text-slate-400">#{refill}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
           {comparisonAlternative && (
-            <p className="mt-3 inline-flex rounded-full border border-emerald-500/20 bg-background/80 px-2.5 py-1 text-[11px] leading-relaxed text-muted-foreground">
+            <p className="mt-3 inline-flex rounded-full border border-emerald-200/80 bg-white/80 px-2.5 py-1 text-[11px] leading-relaxed text-slate-600 dark:border-emerald-900/60 dark:bg-slate-900/80 dark:text-slate-300">
               {fasterAlternative
                 ? `${fasterAlternative.platform.shortName} breaks even faster in ${fasterAlternative.refillsToBreakEven} ${fasterAlternative.refillsToBreakEven === 1 ? 'refill' : 'refills'}.`
-                : `${cheaperAlternative?.platform.shortName} has a lower effective monthly refill cost at ${formatINR(cheaperAlternative?.memberEffectivePerRefill ?? 0)}.`}
+                : `${cheaperAlternative?.platform.shortName} has a lower effective refill cost at ${formatINR(cheaperAlternative?.memberEffectivePerRefill ?? 0)}.`}
             </p>
           )}
         </section>
