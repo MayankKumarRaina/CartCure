@@ -74,14 +74,24 @@ export function MembershipMatrix({
   onSelectPlatform: (id: PlatformId) => void
   isLoading?: boolean
 }) {
+  const selectedQuote = quotes.find((quote) => quote.platform.id === selectedPlatform)
+  const alternatives = quotes.filter((quote) => quote.platform.id !== selectedPlatform)
+  const fasterAlternative = alternatives
+    .filter((quote) => quote.worthIt && quote.refillsToBreakEven < (selectedQuote?.refillsToBreakEven ?? Infinity))
+    .sort((a, b) => a.refillsToBreakEven - b.refillsToBreakEven)[0]
+  const cheaperAlternative = alternatives
+    .filter((quote) => quote.memberEffectivePerRefill < (selectedQuote?.memberEffectivePerRefill ?? Infinity))
+    .sort((a, b) => a.memberEffectivePerRefill - b.memberEffectivePerRefill)[0]
+  const comparisonAlternative = fasterAlternative ?? cheaperAlternative
+
   return (
     <div className="flex flex-col gap-2">
       <div className="overflow-x-auto rounded-2xl border">
-        <table className="w-full min-w-[400px] border-collapse text-xs">
+        <table className="w-full min-w-[760px] border-collapse text-xs">
           <caption className="sr-only">Membership comparison across platforms for your basket</caption>
           <thead>
             <tr className="bg-card">
-              <th scope="col" className="px-3 py-2.5 text-left font-medium text-muted-foreground border-b-2 border-transparent">
+              <th scope="col" className="sticky left-0 z-20 w-32 min-w-32 border-b-2 border-transparent bg-card px-2 py-2.5 text-left font-medium text-muted-foreground">
                 <span className="sr-only">Metric</span>
               </th>
               {quotes.map((q) => {
@@ -125,8 +135,8 @@ export function MembershipMatrix({
                 <th
                   scope="row"
                   className={cn(
-                    'px-3 py-2 text-left font-normal text-muted-foreground',
-                    row.emphasis && 'font-medium text-foreground',
+                    'sticky left-0 z-10 w-32 min-w-32 bg-white/95 pr-2 pl-2 text-left text-[11px] font-medium text-slate-500 backdrop-blur-sm dark:bg-slate-900/95 dark:text-slate-400',
+                    row.emphasis && 'font-semibold text-foreground',
                   )}
                 >
                   {row.label}
@@ -162,6 +172,47 @@ export function MembershipMatrix({
       <p className="text-[11px] leading-relaxed text-muted-foreground">
         *Plan fee spread across {quotes[0]?.platform.membership.durationMonths ?? 6} monthly refills of this basket.
       </p>
+      {selectedQuote && (
+        <section className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4" aria-labelledby="membership-payback-heading">
+          <h3 id="membership-payback-heading" className="text-sm font-semibold text-foreground">
+            Membership Payback Analysis
+          </h3>
+          <p className="mt-2 text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">
+              {selectedQuote.platform.name} {selectedQuote.platform.membership.name}
+            </span>
+            {' · '}
+            {selectedQuote.platform.membership.fee === 0
+              ? 'Free plan'
+              : `${formatINR(selectedQuote.platform.membership.fee)} for ${selectedQuote.platform.membership.durationMonths} months`}
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            Savings per monthly order: {formatINR(selectedQuote.memberBenefit)} medicine discount
+            {' + '}
+            {formatINR(selectedQuote.deliverySaved)} delivery saved
+            {' = '}
+            <span className="font-semibold text-foreground">
+              {formatINR(selectedQuote.savingsPerOrder)} saved per refill
+            </span>
+          </p>
+          <p className="mt-2 text-sm font-semibold leading-relaxed text-foreground">
+            {selectedQuote.platform.membership.fee === 0
+              ? 'No membership fee — instant savings from Cart #1.'
+              : selectedQuote.worthIt
+                ? `Pays for itself in ${selectedQuote.refillsToBreakEven} monthly ${selectedQuote.refillsToBreakEven === 1 ? 'refill' : 'refills'} (within ${selectedQuote.platform.membership.durationMonths} months). Over the full ${selectedQuote.platform.membership.durationMonths}-month plan, you save ${formatINR(selectedQuote.periodNetSavings)} after the membership fee.`
+                : selectedQuote.savingsPerOrder > 0
+                  ? `Not worth it for this basket — you save ${formatINR(selectedQuote.savingsPerOrder)}/month, which takes ${selectedQuote.refillsToBreakEven} months to recover the ${formatINR(selectedQuote.platform.membership.fee)} fee (plan expires in ${selectedQuote.platform.membership.durationMonths} months). Buy without membership instead.`
+                  : `Not worth it for this basket — this plan does not save on each refill, so its ${formatINR(selectedQuote.platform.membership.fee)} fee cannot be recovered within the ${selectedQuote.platform.membership.durationMonths}-month plan. Buy without membership instead.`}
+          </p>
+          {comparisonAlternative && (
+            <p className="mt-3 inline-flex rounded-full border border-emerald-500/20 bg-background/80 px-2.5 py-1 text-[11px] leading-relaxed text-muted-foreground">
+              {fasterAlternative
+                ? `${fasterAlternative.platform.shortName} breaks even faster in ${fasterAlternative.refillsToBreakEven} ${fasterAlternative.refillsToBreakEven === 1 ? 'refill' : 'refills'}.`
+                : `${cheaperAlternative?.platform.shortName} has a lower effective monthly refill cost at ${formatINR(cheaperAlternative?.memberEffectivePerRefill ?? 0)}.`}
+            </p>
+          )}
+        </section>
+      )}
     </div>
   )
 }

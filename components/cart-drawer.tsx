@@ -53,7 +53,7 @@ export function CartDrawer() {
       */}
       <SheetContent className="!w-screen !max-w-[100vw] sm:!w-screen sm:!max-w-[100vw] md:!w-full md:!max-w-4xl flex flex-col p-0">
         <SheetHeader className="p-4 border-b">
-          <SheetTitle className="text-left flex items-center justify-between">
+          <SheetTitle className="flex items-center gap-2.5 pr-10 text-left">
             <span>Your basket</span>
             <span className="text-xs bg-muted text-muted-foreground px-2.5 py-1 rounded-full font-medium">
               {actualTotalItems} {actualTotalItems === 1 ? 'item' : 'items'}
