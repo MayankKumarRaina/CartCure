@@ -23,12 +23,27 @@ type WeeklyPopularMedicine = {
   weekly_searches: number
 }
 
+type AffiliateClick = {
+  id: string
+  platform_id: string
+  is_affiliate: boolean
+  medicine_id: string | null
+  medicine_name: string | null
+  clicked_price: number | null
+  source_component: string
+  basket_size: number | null
+  referrer: string | null
+  user_agent: string | null
+  created_at: string
+}
+
 export type Database = {
   public: {
     Tables: {
       medicines: Table<Medicine>
       pharmacy_prices: Table<PharmacyPrice>
       platform_memberships: Table<PlatformMembership>
+      affiliate_clicks: Table<AffiliateClick>
     }
     Views: Record<string, never>
     Functions: {

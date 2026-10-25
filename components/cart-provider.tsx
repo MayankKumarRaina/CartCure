@@ -126,13 +126,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        if (PLATFORMS.some(({ id }) => !pricesByPlatform.has(id))) {
-          throw new Error('Live price API did not return prices for every pharmacy.')
-        }
-
         setMedicines((current) => current.map((entry) => {
           if (entry.id !== medicine.id) return entry
 
+          const livePricePlatforms = new Set(entry.livePricePlatforms ?? [])
           const pharmacyPricesByPlatform = new Map<PlatformId, PharmacyPrice>()
           for (const price of entry.pharmacyPrices ?? []) {
             const platformId = platformIdFromName(price.platform_name)
@@ -140,13 +137,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
           }
           for (const price of validPrices) {
             const platformId = platformIdFromName(price.platform_name)
-            if (platformId) pharmacyPricesByPlatform.set(platformId, price)
+            if (platformId) {
+              pharmacyPricesByPlatform.set(platformId, price)
+              livePricePlatforms.add(platformId)
+            }
           }
 
           return {
             ...entry,
             prices: { ...entry.prices, ...Object.fromEntries(pricesByPlatform) },
-            livePricePlatforms: [...pricesByPlatform.keys()],
+            livePricePlatforms: [...livePricePlatforms],
             pharmacyPrices: [...pharmacyPricesByPlatform.values()],
           }
         }))
@@ -214,15 +214,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
         const prices = pricesByMedicine.get(price.medicine_id) ?? []
         prices.push(price)
         pricesByMedicine.set(price.medicine_id, prices)
-      }
-
-      for (const id of medicineIds) {
-        const platformIds = new Set((pricesByMedicine.get(id) ?? []).map(
-          ({ platform_name }) => platformIdFromName(platform_name),
-        ))
-        if (PLATFORMS.some(({ id: platformId }) => !platformIds.has(platformId))) {
-          throw new Error(`Batch live price API did not return every pharmacy for medicine ${id}.`)
-        }
       }
 
       setMedicines((current) => current.map((medicine) => {

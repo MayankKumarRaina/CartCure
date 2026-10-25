@@ -10,7 +10,7 @@ import { toCartLines, quoteAll, bestOption, formatINR } from "@/lib/pricing"
 import { MembershipMatrix } from "@/components/membership-matrix"
 import { cn } from "@/lib/utils"
 import type { PlatformId } from "@/lib/data"
-import { getAffiliateUrl } from "@/lib/affiliates"
+import { getAffiliateUrl, trackAndOpenStore } from "@/lib/affiliates"
 
 function pharmacySearchUrl(platformId: PlatformId, query: string) {
   const encodedQuery = encodeURIComponent(query)
@@ -287,7 +287,17 @@ export function CartDrawer() {
                   : pharmacySearchUrl(activeQuote.platform.id, primaryMedicine.name)
                 const targetUrl = getAffiliateUrl(activeQuote.platform.id, standardUrl)
 
-                window.open(targetUrl, '_blank', 'noopener,noreferrer')
+                trackAndOpenStore({
+                  platformId: activeQuote.platform.id,
+                  targetUrl,
+                  medicineId: primaryMedicine.id,
+                  medicineName: cartLines.map(({ medicine, qty }) => `${qty}x ${medicine.name}`).join(', '),
+                  clickedPrice: includeMembership && viewMode === 'membership'
+                    ? activeQuote.memberPayToday
+                    : activeQuote.standardTotal,
+                  sourceComponent: 'basket_checkout',
+                  basketSize: actualTotalItems,
+                })
 
                 if (navigator.clipboard && cartLines.length > 0) {
                   const list = cartLines

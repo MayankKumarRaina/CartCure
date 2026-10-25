@@ -141,10 +141,37 @@ function cacheMedicines(category: Category | null, medicines: CatalogMedicine[])
   }
 }
 
-function searchFilter(term: string) {
-  const safeTerm = term.replace(/[(),"]/g, ' ').replace(/[\\%_]/g, '\\$&').trim()
-  const pattern = `%${safeTerm}%`
-  return `brand_name.ilike.${pattern},salt_composition.ilike.${pattern}`
+function isMedicineRows(value: unknown): value is Medicine[] {
+  return Array.isArray(value) && value.every((row: unknown) => (
+    typeof row === 'object'
+    && row !== null
+    && 'id' in row
+    && typeof row.id === 'string'
+    && 'brand_name' in row
+    && typeof row.brand_name === 'string'
+    && 'salt_composition' in row
+    && (typeof row.salt_composition === 'string' || row.salt_composition === null)
+    && 'pack_size' in row
+    && (typeof row.pack_size === 'string' || row.pack_size === null)
+    && 'manufacturer' in row
+    && (typeof row.manufacturer === 'string' || row.manufacturer === null)
+    && 'category' in row
+    && typeof row.category === 'string'
+    && 'search_count' in row
+    && typeof row.search_count === 'number'
+    && 'mrp' in row
+    && typeof row.mrp === 'number'
+    && 'is_rx_required' in row
+    && typeof row.is_rx_required === 'boolean'
+  ))
+}
+
+async function fetchMedicineRows(params: URLSearchParams, signal?: AbortSignal): Promise<Medicine[]> {
+  const response = await fetch(`/api/medicines?${params.toString()}`, { signal })
+  if (!response.ok) throw new Error(`Medicine search request failed with status ${response.status}`)
+  const result: unknown = await response.json()
+  if (!isMedicineRows(result)) throw new Error('Medicine search API returned an invalid response.')
+  return result
 }
 
 async function mapMedicinesWithCachedPrices(rows: Medicine[]): Promise<CatalogMedicine[]> {
@@ -281,20 +308,10 @@ export function MedicineSearch() {
 
     try {
       const normalizedCategory = category?.trim() ?? null
-      const rows = await fetchWithRetry(async () => {
-        let medicinesQuery = supabase.from('medicines').select('*')
-        if (normalizedCategory) {
-          medicinesQuery = medicinesQuery.ilike('category', normalizedCategory)
-        } else {
-          medicinesQuery = medicinesQuery.in('category', CATEGORIES)
-        }
-        const { data, error: queryError } = await medicinesQuery
-          .order('search_count', { ascending: false })
-          .order('id', { ascending: true })
-          .range(0, INITIAL_MEDICINE_LIMIT - 1)
-        if (queryError) throw queryError
-        return data
-      })
+      const rows = await fetchWithRetry(async () => fetchMedicineRows(new URLSearchParams({
+        ...(normalizedCategory ? { category: normalizedCategory } : {}),
+        limit: String(INITIAL_MEDICINE_LIMIT),
+      })))
       if (currentOperation !== operationId.current) return
 
       const medicines = await mapMedicinesWithCachedPrices(rows)
@@ -350,34 +367,16 @@ export function MedicineSearch() {
     const controller = new AbortController()
     setSearching(true)
     setError(null)
-    const pattern = `%${term}%`
-
     async function searchMedicines() {
-      const [brandRows, saltRows] = await fetchWithRetry(async () => {
-        const [brandResult, saltResult] = await Promise.all([
-          supabase
-            .from('medicines')
-            .select('*')
-            .ilike('brand_name', pattern)
-            .order('mrp', { ascending: true })
-            .limit(8)
-            .abortSignal(controller.signal),
-          supabase
-            .from('medicines')
-            .select('*')
-            .ilike('salt_composition', pattern)
-            .order('mrp', { ascending: true })
-            .limit(8)
-            .abortSignal(controller.signal),
-        ])
-        if (brandResult.error) throw brandResult.error
-        if (saltResult.error) throw saltResult.error
-        return [brandResult.data, saltResult.data] as const
-      }, 3, 900, controller.signal)
+      const rows = await fetchWithRetry(async () => fetchMedicineRows(new URLSearchParams({
+        q: term,
+        mode: 'autocomplete',
+        limit: '8',
+      }), controller.signal), 3, 900, controller.signal)
       if (currentSearch !== searchRequestId.current) return
 
       const uniqueRows = new Map<string, Medicine>()
-      for (const row of [...brandRows, ...saltRows]) uniqueRows.set(row.id, row)
+      for (const row of rows) uniqueRows.set(row.id, row)
       setSearchResults([...uniqueRows.values()].slice(0, 8))
       setError(null)
       if (failedLoadRef.current?.type === 'autocomplete') {
@@ -424,17 +423,10 @@ export function MedicineSearch() {
     setIsBrowseLoading(true)
 
     try {
-      const rows = await fetchWithRetry(async () => {
-        const { data, error: queryError } = await supabase
-          .from('medicines')
-          .select('*')
-          .or(searchFilter(term))
-          .order('search_count', { ascending: false })
-          .order('id', { ascending: true })
-          .range(0, INITIAL_MEDICINE_LIMIT - 1)
-        if (queryError) throw queryError
-        return data
-      })
+      const rows = await fetchWithRetry(async () => fetchMedicineRows(new URLSearchParams({
+        q: term,
+        limit: String(INITIAL_MEDICINE_LIMIT),
+      })))
       if (currentOperation !== operationId.current) return
 
       const medicines = await mapMedicinesWithCachedPrices(rows)
@@ -485,18 +477,12 @@ export function MedicineSearch() {
     const offset = browseMedicines.length
     try {
       const rows = await fetchWithRetry(async () => {
-        let medicinesQuery = supabase.from('medicines').select('*')
-        if (submittedSearch) {
-          medicinesQuery = medicinesQuery.or(searchFilter(submittedSearch))
-        } else if (activeCategory) {
-          medicinesQuery = medicinesQuery.ilike('category', activeCategory.trim())
-        }
-        const { data, error: queryError } = await medicinesQuery
-          .order('search_count', { ascending: false })
-          .order('id', { ascending: true })
-          .range(offset, offset + APPEND_MEDICINE_LIMIT - 1)
-        if (queryError) throw queryError
-        return data
+        const rows = await fetchMedicineRows(new URLSearchParams({
+          ...(submittedSearch ? { q: submittedSearch } : { category: activeCategory ?? '' }),
+          offset: String(offset),
+          limit: String(APPEND_MEDICINE_LIMIT),
+        }))
+        return rows
       })
       if (currentOperation !== operationId.current) return
 
@@ -559,18 +545,11 @@ export function MedicineSearch() {
       } else {
         const offset = browseMedicines.length
         const rows = await fetchWithRetry(async () => {
-          let medicinesQuery = supabase.from('medicines').select('*')
-          if (submittedSearch) {
-            medicinesQuery = medicinesQuery.or(searchFilter(submittedSearch))
-          } else if (activeCategory) {
-            medicinesQuery = medicinesQuery.ilike('category', activeCategory.trim())
-          }
-          const { data, error: queryError } = await medicinesQuery
-            .order('search_count', { ascending: false })
-            .order('id', { ascending: true })
-            .range(offset, offset + LIVE_PRICE_PAGE_SIZE - 1)
-          if (queryError) throw queryError
-          return data
+          return fetchMedicineRows(new URLSearchParams({
+            ...(submittedSearch ? { q: submittedSearch } : { category: activeCategory ?? '' }),
+            offset: String(offset),
+            limit: String(LIVE_PRICE_PAGE_SIZE),
+          }))
         })
         if (currentOperation !== operationId.current) return
 

@@ -6,7 +6,7 @@ import { Check, ChevronDown, FileText, Minus, Plus, ShoppingCart } from 'lucide-
 import { PLATFORMS, type CatalogMedicine, type Platform, type PlatformId, type WellnessPartnerId } from '@/lib/data'
 import { formatINR } from '@/lib/pricing'
 import { useCart } from '@/components/cart-provider'
-import { getAffiliateUrl, hasAffiliateLink, WELLNESS_PARTNERS } from '@/lib/affiliates'
+import { getAffiliateUrl, hasAffiliateLink, trackAndOpenStore, WELLNESS_PARTNERS } from '@/lib/affiliates'
 import { cn } from '@/lib/utils'
 
 type DosageForm = 'tablet' | 'capsule' | 'liquid' | 'injection' | 'topical' | 'inhaler'
@@ -365,6 +365,17 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
             href={winner.href}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={(event) => {
+              event.preventDefault()
+              trackAndOpenStore({
+                platformId: winner.id,
+                targetUrl: winner.href,
+                medicineId: medicine.id,
+                medicineName: medicine.name,
+                clickedPrice: winner.price,
+                sourceComponent: 'card_hero',
+              })
+            }}
             aria-label={`View ${medicine.name} at ${winner.name} for ${formatINR(winner.price)}`}
             className="flex min-w-0 flex-1 items-center justify-start gap-2.5 rounded-xl border border-emerald-500/40 bg-emerald-50/70 px-3 py-2 transition-colors hover:bg-emerald-100 dark:bg-emerald-950/35 dark:hover:bg-emerald-950/70"
           >
@@ -422,6 +433,17 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
             href={platform.href}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={(event) => {
+              event.preventDefault()
+              trackAndOpenStore({
+                platformId: platform.id,
+                targetUrl: platform.href,
+                medicineId: medicine.id,
+                medicineName: medicine.name,
+                clickedPrice: platform.price,
+                sourceComponent: 'card_chip',
+              })
+            }}
             aria-label={`View ${medicine.name} at ${platform.shortName} for ${formatINR(platform.price)}`}
             className="flex min-w-0 items-center gap-1.5 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/90 px-1.5 py-1.5"
           >
@@ -519,10 +541,19 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
                     href={store.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    aria-label={`View ${medicine.name} at ${store.name}`}
-                    onClick={() => {
+                    onClick={(event) => {
+                      event.preventDefault()
                       if (priceCheckFailed) void checkWellnessPrices()
+                      trackAndOpenStore({
+                        platformId: store.id,
+                        targetUrl: store.href,
+                        medicineId: medicine.id,
+                        medicineName: medicine.name,
+                        clickedPrice: store.price,
+                        sourceComponent: 'card_drawer',
+                      })
                     }}
+                    aria-label={`View ${medicine.name} at ${store.name}`}
                     className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2"
                   >
                     <span className="flex min-w-0 items-center gap-2">

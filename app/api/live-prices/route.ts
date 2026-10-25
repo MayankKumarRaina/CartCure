@@ -17,6 +17,10 @@ const PLATFORMS = [
 ] as const
 const ACTIVE_PLATFORM_NAMES = new Set<string>(PLATFORMS)
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const EDGE_CACHE_HEADERS = {
+  'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
+  'CDN-Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
+}
 
 type MedicineRequest = { medicine_id: string; mrp: number }
 type PharmacyPrice = {
@@ -24,14 +28,6 @@ type PharmacyPrice = {
   platform_name: string
   price: number
   updated_at: string
-}
-
-let cacheRefreshQueue: Promise<void> = Promise.resolve()
-
-function serializeCacheRefresh<T>(operation: () => Promise<T>): Promise<T> {
-  const result = cacheRefreshQueue.then(operation, operation)
-  cacheRefreshQueue = result.then(() => undefined, () => undefined)
-  return result
 }
 
 function isMedicineRequest(value: unknown): value is MedicineRequest {
@@ -47,69 +43,30 @@ function isMedicineRequest(value: unknown): value is MedicineRequest {
 }
 
 async function resolvePrices(requests: MedicineRequest[]): Promise<PharmacyPrice[]> {
-  return serializeCacheRefresh(async () => {
-    const now = Date.now()
-    const cutoff = now - CACHE_TTL_MS
-    const medicineIds = requests.map(({ medicine_id }) => medicine_id)
-    const { data: cachedPrices, error: cacheError } = await supabaseAdmin
-      .from('pharmacy_prices')
-      .select('medicine_id, platform_name, price, updated_at')
-      .in('medicine_id', medicineIds)
-      .order('updated_at', { ascending: false })
+  const now = Date.now()
+  const cutoff = now - CACHE_TTL_MS
+  const medicineIds = requests.map(({ medicine_id }) => medicine_id)
+  const { data: cachedPrices, error: cacheError } = await supabaseAdmin
+    .from('pharmacy_prices')
+    .select('medicine_id, platform_name, price, updated_at')
+    .in('medicine_id', medicineIds)
+    .order('updated_at', { ascending: false })
 
-    if (cacheError) throw cacheError
+  if (cacheError) throw cacheError
 
-    const freshPricesByMedicine = new Map<string, Map<string, PharmacyPrice>>()
-    for (const row of cachedPrices ?? []) {
-      if (!ACTIVE_PLATFORM_NAMES.has(row.platform_name)) continue
-      const updatedAt = Date.parse(row.updated_at)
-      if (!Number.isFinite(updatedAt) || updatedAt < cutoff || updatedAt > now) continue
-      let freshPrices = freshPricesByMedicine.get(row.medicine_id)
-      if (!freshPrices) {
-        freshPrices = new Map()
-        freshPricesByMedicine.set(row.medicine_id, freshPrices)
-      }
-      if (!freshPrices.has(row.platform_name)) freshPrices.set(row.platform_name, row)
-    }
+  const latestFreshPrices = new Map<string, PharmacyPrice>()
+  for (const row of cachedPrices ?? []) {
+    if (!ACTIVE_PLATFORM_NAMES.has(row.platform_name)) continue
+    const updatedAt = Date.parse(row.updated_at)
+    if (!Number.isFinite(updatedAt) || updatedAt < cutoff || updatedAt > now) continue
+    const key = `${row.medicine_id}:${row.platform_name}`
+    if (!latestFreshPrices.has(key)) latestFreshPrices.set(key, row)
+  }
 
-    const missingPrices: PharmacyPrice[] = []
-    for (const { medicine_id, mrp } of requests) {
-      const freshPrices = freshPricesByMedicine.get(medicine_id)
-      for (const platformName of PLATFORMS) {
-        if (freshPrices?.has(platformName)) continue
-        const discount = 0.05 + Math.random() * (0.22 - 0.05)
-        missingPrices.push({
-          medicine_id,
-          platform_name: platformName,
-          price: Number((mrp * (1 - discount)).toFixed(2)),
-          updated_at: new Date().toISOString(),
-        })
-      }
-    }
-
-    if (missingPrices.length > 0) {
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-      const { data: savedPrices, error: saveError } = await supabaseAdmin
-        .from('pharmacy_prices')
-        .upsert(missingPrices, { onConflict: 'medicine_id,platform_name' })
-        .select('medicine_id, platform_name, price, updated_at')
-
-      if (saveError) throw saveError
-
-      for (const price of savedPrices ?? []) {
-        let freshPrices = freshPricesByMedicine.get(price.medicine_id)
-        if (!freshPrices) {
-          freshPrices = new Map()
-          freshPricesByMedicine.set(price.medicine_id, freshPrices)
-        }
-        freshPrices.set(price.platform_name, price)
-      }
-    }
-
-    return requests.flatMap(({ medicine_id }) => [
-      ...(freshPricesByMedicine.get(medicine_id)?.values() ?? []),
-    ])
-  })
+  return requests.flatMap(({ medicine_id }) => PLATFORMS.flatMap((platformName) => {
+    const price = latestFreshPrices.get(`${medicine_id}:${platformName}`)
+    return price ? [price] : []
+  }))
 }
 
 function handleFailure(error: unknown) {
@@ -134,7 +91,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    return NextResponse.json(await resolvePrices([{ medicine_id: medicineId, mrp }]))
+    return NextResponse.json(await resolvePrices([{ medicine_id: medicineId, mrp }]), {
+      headers: EDGE_CACHE_HEADERS,
+    })
   } catch (error) {
     return handleFailure(error)
   }
