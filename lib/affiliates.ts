@@ -11,6 +11,11 @@ export const WELLNESS_PARTNERS = [
   { id: 'truebasics', name: 'TrueBasics', badge: 'TB' },
 ] as const
 
+export function hasAffiliateLink(platformId: string): boolean {
+  const url = AFFILIATE_LINKS[platformId.trim().toLowerCase()]
+  return typeof url === 'string' && url.trim().length > 0
+}
+
 export function getAffiliateUrl(platformKey: string, fallbackUrl: string): string {
   return AFFILIATE_LINKS[platformKey.trim().toLowerCase()] || fallbackUrl
 }

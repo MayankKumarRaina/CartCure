@@ -98,7 +98,9 @@ function isCachedCatalogMedicine(value: unknown): value is CatalogMedicine {
     && Array.isArray(medicine.categories)
     && typeof medicine.prices === 'object'
     && medicine.prices !== null
-    && Object.values(medicine.prices).every((price) => typeof price === 'number' && Number.isFinite(price))
+    && Object.values(medicine.prices).every((price) => (
+      price === null || (typeof price === 'number' && Number.isFinite(price))
+    ))
 }
 
 function readMedicineCache(): MedicineCache {

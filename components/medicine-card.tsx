@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Check, ChevronDown, FileText, Minus, Plus, ShoppingCart } from 'lucide-react'
-import { PLATFORMS, type CatalogMedicine, type Platform, type PlatformId } from '@/lib/data'
+import { PLATFORMS, type CatalogMedicine, type Platform, type PlatformId, type WellnessPartnerId } from '@/lib/data'
 import { formatINR } from '@/lib/pricing'
 import { useCart } from '@/components/cart-provider'
-import { getAffiliateUrl, WELLNESS_PARTNERS } from '@/lib/affiliates'
+import { getAffiliateUrl, hasAffiliateLink, WELLNESS_PARTNERS } from '@/lib/affiliates'
 import { cn } from '@/lib/utils'
 
 type DosageForm = 'tablet' | 'capsule' | 'liquid' | 'injection' | 'topical' | 'inhaler'
@@ -137,6 +137,22 @@ const BRAND_STYLES: Record<PlatformId, string> = {
   truemeds: 'bg-[#1E40AF] text-white',
 }
 
+const WELLNESS_BRAND_STYLES: Record<WellnessPartnerId, string> = {
+  healthkart: 'bg-[#00B5B7] text-white',
+  truebasics: 'bg-[#0F766E] text-white',
+}
+
+type ComparisonStore = {
+  id: PlatformId | WellnessPartnerId
+  name: string
+  shortName: string
+  badge: string
+  brandStyle: string
+  price: number | null
+  href: string
+  hasAffiliate: boolean
+}
+
 function pharmacyUrl(platform: Platform, medicine: CatalogMedicine) {
   return getAffiliateUrl(platform.id, medicine.productUrls?.[platform.id] ?? platform.searchUrl(medicine.name))
 }
@@ -145,16 +161,62 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
   const { items, add, increment, decrement, loadingPriceIds, resolveLivePrices } = useCart()
   const qty = items[medicine.id] ?? 0
   const isPriceLoading = loadingPriceIds.has(medicine.id)
-  const pricedPlatforms = PLATFORMS.filter(({ id }) => (
-    medicine.prices[id] > 0
-    && (medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.includes(id))
-  )).sort((a, b) => medicine.prices[a.id] - medicine.prices[b.id])
-  const winner = pricedPlatforms[0]
-  const runnerUps = PLATFORMS.filter(({ id }) => id !== winner?.id).slice(0, 3)
   const totalStoreCount = PLATFORMS.length + WELLNESS_PARTNERS.length
   const [isExpanded, setIsExpanded] = useState(false)
   const [justAdded, setJustAdded] = useState(false)
+  const [wellnessPrices, setWellnessPrices] = useState<Partial<Record<WellnessPartnerId, number | null>>>({})
+  const [wellnessPriceErrors, setWellnessPriceErrors] = useState<ReadonlySet<WellnessPartnerId>>(new Set())
+  const [isCheckingWellnessPrices, setIsCheckingWellnessPrices] = useState(false)
   const cardRef = useRef<HTMLElement>(null)
+  const wellnessCheckAttempted = useRef(false)
+
+  const comparisonStores: ComparisonStore[] = [
+    ...PLATFORMS.map((platform) => {
+      const price = medicine.prices[platform.id]
+      const available = price > 0
+        && (medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.includes(platform.id))
+      return {
+        id: platform.id,
+        name: platform.name,
+        shortName: platform.shortName,
+        badge: platform.id === 'tata1mg' ? '1mg' : platform.id === 'netmeds' ? '+' : platform.shortName.slice(0, 2),
+        brandStyle: BRAND_STYLES[platform.id],
+        price: available ? price : null,
+        href: pharmacyUrl(platform, medicine),
+        hasAffiliate: hasAffiliateLink(platform.id),
+      }
+    }),
+    ...WELLNESS_PARTNERS.map((partner) => ({
+      id: partner.id,
+      name: partner.name,
+      shortName: partner.name,
+      badge: partner.badge,
+      brandStyle: WELLNESS_BRAND_STYLES[partner.id],
+      price: Object.prototype.hasOwnProperty.call(wellnessPrices, partner.id)
+        ? wellnessPrices[partner.id] ?? null
+        : medicine.prices[partner.id] ?? null,
+      href: getAffiliateUrl(partner.id, `https://${partner.id}.com`),
+      hasAffiliate: hasAffiliateLink(partner.id),
+    })),
+  ]
+  const isAvailablePrice = (store: ComparisonStore): store is ComparisonStore & { price: number } => (
+    typeof store.price === 'number' && Number.isFinite(store.price) && store.price > 0
+  )
+  const pricedStores = comparisonStores.filter(isAvailablePrice)
+  const winner = [...pricedStores].sort((a, b) => (
+    a.price - b.price || Number(b.hasAffiliate) - Number(a.hasAffiliate)
+  ))[0]
+  const runnerUps = pricedStores
+    .filter(({ id }) => id !== winner?.id)
+    .sort((a, b) => Number(b.hasAffiliate) - Number(a.hasAffiliate) || a.price - b.price)
+    .slice(0, 3)
+  const sortedComparisonStores = [...comparisonStores].sort((a, b) => {
+    const group = (store: ComparisonStore) => (
+      isAvailablePrice(store) ? (store.hasAffiliate ? 0 : 1) : 2
+    )
+    return group(a) - group(b)
+      || (isAvailablePrice(a) && isAvailablePrice(b) ? a.price - b.price : 0)
+  })
 
   useEffect(() => {
     const element = cardRef.current
@@ -185,9 +247,74 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
     })
   }
 
+  async function checkWellnessPrices() {
+    if (wellnessCheckAttempted.current || isCheckingWellnessPrices) return
+    wellnessCheckAttempted.current = true
+    setIsCheckingWellnessPrices(true)
+    setWellnessPriceErrors(new Set())
+    try {
+      const response = await fetch('/api/wellness-prices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: medicine.name,
+          salt: medicine.salt,
+          rxRequired: medicine.rxRequired,
+        }),
+      })
+      if (!response.ok) throw new Error(`Wellness price request failed with status ${response.status}`)
+      const result: unknown = await response.json()
+      if (
+        typeof result !== 'object'
+        || result === null
+        || !('prices' in result)
+        || typeof result.prices !== 'object'
+        || result.prices === null
+        || !('errors' in result)
+        || !Array.isArray(result.errors)
+      ) {
+        throw new Error('Wellness price API returned an invalid response.')
+      }
+      const returnedPrices = result.prices as Record<string, unknown>
+      const errors = new Set(
+        result.errors.filter((id): id is WellnessPartnerId => (
+          id === 'healthkart' || id === 'truebasics'
+        )),
+      )
+      const parsedPrices: Partial<Record<WellnessPartnerId, number | null>> = {}
+      for (const partner of WELLNESS_PARTNERS) {
+        if (errors.has(partner.id)) continue
+        const price = returnedPrices[partner.id]
+        if (price === null) {
+          parsedPrices[partner.id] = null
+          continue
+        }
+        if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) {
+          throw new Error(`Wellness price API returned an invalid ${partner.name} price.`)
+        }
+        parsedPrices[partner.id] = price
+      }
+      setWellnessPrices((current) => ({ ...current, ...parsedPrices }))
+      setWellnessPriceErrors(errors)
+      if (errors.size > 0) wellnessCheckAttempted.current = false
+    } catch (error) {
+      wellnessCheckAttempted.current = false
+      setWellnessPriceErrors(new Set(['healthkart', 'truebasics']))
+      console.error(`Unable to check wellness prices for ${medicine.id}:`, error)
+    } finally {
+      setIsCheckingWellnessPrices(false)
+    }
+  }
+
   function toggleComparison() {
-    setIsExpanded((current) => !current)
-    if (!winner) showOffers()
+    setIsExpanded((current) => {
+      const next = !current
+      if (next) {
+        if (!winner) showOffers()
+        void checkWellnessPrices()
+      }
+      return next
+    })
   }
 
   const handleAdd = () => {
@@ -235,23 +362,23 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
       <div className="box-border mt-3 flex w-full min-w-0 max-w-full items-stretch gap-2 overflow-hidden">
         {winner ? (
           <a
-            href={pharmacyUrl(winner, medicine)}
+            href={winner.href}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`View ${medicine.name} at ${winner.name} for ${formatINR(medicine.prices[winner.id])}`}
+            aria-label={`View ${medicine.name} at ${winner.name} for ${formatINR(winner.price)}`}
             className="flex min-w-0 flex-1 items-center justify-start gap-2.5 rounded-xl border border-emerald-500/40 bg-emerald-50/70 px-3 py-2 transition-colors hover:bg-emerald-100 dark:bg-emerald-950/35 dark:hover:bg-emerald-950/70"
           >
             <span className="min-w-0">
               <span className="flex items-center gap-1">
                 <span className="text-[17px] font-extrabold leading-none text-emerald-600 dark:text-emerald-400 sm:text-lg">
-                  {formatINR(medicine.prices[winner.id])}
+                  {formatINR(winner.price)}
                 </span>
                 <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8.5px] font-extrabold uppercase tracking-wider text-slate-950">
                   Lowest
                 </span>
               </span>
               <span className="mt-1 block truncate text-[10.5px] font-medium text-emerald-700/90 dark:text-emerald-400/90">
-                Save {formatINR(Math.max(0, medicine.mrp - medicine.prices[winner.id]))} vs MRP
+                Save {formatINR(Math.max(0, medicine.mrp - winner.price))} vs MRP
               </span>
             </span>
             <span className="mx-1 h-7 w-px shrink-0 bg-emerald-500/30" aria-hidden="true" />
@@ -292,21 +419,19 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
         {runnerUps.map((platform) => (
           <a
             key={platform.id}
-            href={pharmacyUrl(platform, medicine)}
+            href={platform.href}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`View ${medicine.name} at ${platform.shortName}`}
+            aria-label={`View ${medicine.name} at ${platform.shortName} for ${formatINR(platform.price)}`}
             className="flex min-w-0 items-center gap-1.5 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/90 px-1.5 py-1.5"
           >
-            <span className={cn('flex size-5 shrink-0 items-center justify-center rounded-full text-[8px] font-extrabold', BRAND_STYLES[platform.id])}>
-              {platform.id === 'tata1mg' ? '1mg' : platform.id === 'netmeds' ? '+' : platform.shortName.slice(0, 2)}
+            <span className={cn('flex size-5 shrink-0 items-center justify-center rounded-full text-[8px] font-extrabold', platform.brandStyle)}>
+              {platform.badge}
             </span>
             <span className="min-w-0 flex-1 leading-tight">
               <span className="block truncate text-[9.5px] font-medium leading-tight text-slate-400">{platform.shortName}</span>
               <span className="block truncate text-[11px] font-bold leading-tight text-slate-100">
-                {medicine.prices[platform.id] > 0 && (medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.includes(platform.id))
-                  ? formatINR(medicine.prices[platform.id])
-                  : '₹---'}
+                {formatINR(platform.price)}
               </span>
             </span>
           </a>
@@ -317,7 +442,7 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
           aria-expanded={isExpanded}
           className="flex min-w-0 flex-col items-center justify-center whitespace-nowrap rounded-xl border border-slate-800 bg-slate-900/70 px-1 py-1.5 text-[9.5px] font-semibold leading-tight text-slate-300"
         >
-          +{Math.max(0, totalStoreCount - (winner ? 4 : 3))} more
+          +{Math.max(0, totalStoreCount - (winner ? 1 : 0) - runnerUps.length)} more
         </button>
 
         <AnimatePresence mode="popLayout" initial={false}>
@@ -380,52 +505,47 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
             className="overflow-hidden"
           >
             <div className="mt-3 grid gap-2 border-t border-slate-800 pt-3">
-              {PLATFORMS.map((platform) => {
-                const hasPrice = medicine.prices[platform.id] > 0
-                  && (medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.includes(platform.id))
+              {sortedComparisonStores.map((store) => {
+                const availablePrice = isAvailablePrice(store) ? store.price : null
+                const hasPrice = availablePrice !== null
+                const isWellnessPartner = store.id === 'healthkart' || store.id === 'truebasics'
+                const priceCheckFailed = (
+                  (store.id === 'healthkart' || store.id === 'truebasics')
+                  && wellnessPriceErrors.has(store.id)
+                )
                 return (
                   <a
-                    key={platform.id}
-                    href={pharmacyUrl(platform, medicine)}
+                    key={store.id}
+                    href={store.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    aria-label={`View ${medicine.name} at ${platform.name}`}
+                    aria-label={`View ${medicine.name} at ${store.name}`}
+                    onClick={() => {
+                      if (priceCheckFailed) void checkWellnessPrices()
+                    }}
                     className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2"
                   >
                     <span className="flex min-w-0 items-center gap-2">
-                      <span className={cn('flex size-7 shrink-0 items-center justify-center rounded-full text-[9px] font-bold', BRAND_STYLES[platform.id])}>
-                        {platform.id === 'tata1mg' ? '1mg' : platform.id === 'netmeds' ? '+' : platform.shortName.slice(0, 2)}
+                      <span className={cn('flex size-7 shrink-0 items-center justify-center rounded-full text-[9px] font-bold', store.brandStyle)}>
+                        {store.badge}
                       </span>
-                      <span className="truncate text-sm font-medium text-slate-200">{platform.name}</span>
+                      <span className="truncate text-sm font-medium text-slate-200">{store.name}</span>
                     </span>
-                    <span className="shrink-0 text-sm font-bold text-white">
-                      {hasPrice ? formatINR(medicine.prices[platform.id]) : isPriceLoading ? 'Checking…' : 'Check Offer →'}
+                    <span className={cn(
+                      'shrink-0 text-sm',
+                      hasPrice ? 'font-bold text-white' : 'font-semibold text-slate-500',
+                    )}>
+                      {hasPrice
+                        ? formatINR(availablePrice)
+                        : isWellnessPartner && isCheckingWellnessPrices
+                          ? '...'
+                          : priceCheckFailed
+                            ? 'Retry check'
+                            : '--'}
                     </span>
                   </a>
                 )
               })}
-              {WELLNESS_PARTNERS.map((partner) => (
-                <a
-                  key={partner.id}
-                  href={getAffiliateUrl(partner.id, `https://${partner.id}.com`)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-between gap-3 rounded-xl border border-teal-900/70 bg-teal-950/30 px-3 py-2"
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className={cn(
-                      'flex size-7 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white',
-                      partner.id === 'healthkart' ? 'bg-[#00B5B7]' : 'bg-[#0F766E]',
-                    )}>
-                      {partner.badge}
-                    </span>
-                    <span className="truncate text-sm font-medium text-slate-200">{partner.name}</span>
-                  </span>
-                  <span className="shrink-0 text-right text-[10px] font-semibold text-teal-300">
-                    Check Offer →
-                  </span>
-                </a>
-              ))}
             </div>
           </motion.div>
         )}

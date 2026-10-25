@@ -1,4 +1,6 @@
 export type PlatformId = 'tata1mg' | 'pharmeasy' | 'netmeds' | 'apollo' | 'truemeds'
+export type WellnessPartnerId = 'healthkart' | 'truebasics'
+export type MedicinePrices = Record<PlatformId, number> & Partial<Record<WellnessPartnerId, number | null>>
 
 export const CATEGORIES = [
   'Anti Diabetic',
@@ -67,7 +69,7 @@ export type CatalogMedicine = {
   mrp: number
   categories: Category[]
   rxRequired: boolean
-  prices: Record<PlatformId, number>
+  prices: MedicinePrices
   livePricePlatforms?: PlatformId[]
   pharmacyPrices?: PharmacyPrice[]
   productUrls?: Partial<Record<PlatformId, string>>
@@ -91,9 +93,9 @@ export const PLATFORMS: Platform[] = [
 export const PLATFORM_BY_ID = Object.fromEntries(PLATFORMS.map((p) => [p.id, p])) as Record<PlatformId, Platform>
 
 export const MEDICINES: CatalogMedicine[] = [
-  { id: 'telma-40', name: 'Telma 40mg Tablet', pack: 'Strip of 15 tablets', salt: 'Telmisartan (40mg)', manufacturer: 'Glenmark Pharmaceuticals', mrp: 248, categories: ['Cardiac'], rxRequired: true, prices: { tata1mg: 220, pharmeasy: 205, netmeds: 230, apollo: 215, truemeds: 198 } },
-  { id: 'glycomet-gp-1', name: 'Glycomet GP 1 Tablet PR', pack: 'Strip of 15 tablets', salt: 'Glimepiride (1mg) + Metformin (500mg)', manufacturer: 'USV Ltd', mrp: 162, categories: ['Anti Diabetic'], rxRequired: true, prices: { tata1mg: 142, pharmeasy: 148, netmeds: 136, apollo: 145, truemeds: 130 } },
-  { id: 'thyronorm-100', name: 'Thyronorm 100mcg Tablet', pack: 'Bottle of 120 tablets', salt: 'Thyroxine (100mcg)', manufacturer: 'Abbott', mrp: 232, categories: [], rxRequired: true, prices: { tata1mg: 199, pharmeasy: 207, netmeds: 212, apollo: 205, truemeds: 185 } }
+  { id: 'telma-40', name: 'Telma 40mg Tablet', pack: 'Strip of 15 tablets', salt: 'Telmisartan (40mg)', manufacturer: 'Glenmark Pharmaceuticals', mrp: 248, categories: ['Cardiac'], rxRequired: true, prices: { tata1mg: 220, pharmeasy: 205, netmeds: 230, apollo: 215, truemeds: 198, healthkart: null, truebasics: null } },
+  { id: 'glycomet-gp-1', name: 'Glycomet GP 1 Tablet PR', pack: 'Strip of 15 tablets', salt: 'Glimepiride (1mg) + Metformin (500mg)', manufacturer: 'USV Ltd', mrp: 162, categories: ['Anti Diabetic'], rxRequired: true, prices: { tata1mg: 142, pharmeasy: 148, netmeds: 136, apollo: 145, truemeds: 130, healthkart: null, truebasics: null } },
+  { id: 'thyronorm-100', name: 'Thyronorm 100mcg Tablet', pack: 'Bottle of 120 tablets', salt: 'Thyroxine (100mcg)', manufacturer: 'Abbott', mrp: 232, categories: [], rxRequired: true, prices: { tata1mg: 199, pharmeasy: 207, netmeds: 212, apollo: 205, truemeds: 185, healthkart: null, truebasics: null } }
 ]
 
 export const QUICK_FILTERS: Category[] = [...CATEGORIES]

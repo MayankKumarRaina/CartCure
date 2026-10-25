@@ -59,7 +59,10 @@ export async function loadMedicines(): Promise<{ medicines: CatalogMedicine[]; s
       pricesByMedicine.set(price.medicine_id, rows)
     }
     const medicines = medicinesResult.data.map((row) => mapMedicine(row, pricesByMedicine.get(row.id) ?? []))
-    if (medicines.some((medicine) => !medicine.name || Object.values(medicine.prices).some((price) => price <= 0))) {
+    if (medicines.some((medicine) => (
+      !medicine.name
+      || Object.values(medicine.prices).some((price) => typeof price === 'number' && price <= 0)
+    ))) {
       throw new Error('Incomplete medicine pricing data')
     }
     return { medicines, source: 'live' }
