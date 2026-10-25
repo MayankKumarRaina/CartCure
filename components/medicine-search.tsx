@@ -1,7 +1,22 @@
 'use client'
 
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowUpDown, ChevronDown, RefreshCw, ScanLine, Search, SearchX, SlidersHorizontal, X } from 'lucide-react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
+import {
+  ArrowDownAZ,
+  ArrowUpDown,
+  Check,
+  ChevronDown,
+  Flame,
+  RefreshCw,
+  ScanLine,
+  Search,
+  SearchX,
+  SlidersHorizontal,
+  Sparkles,
+  TrendingDown,
+  X,
+} from 'lucide-react'
 import { CATEGORIES, MEDICINES, PLATFORMS, type Category, type Medicine, type PharmacyPrice } from '@/lib/data'
 import { useCart } from '@/components/cart-provider'
 import LoadingResearcher from '@/components/loading-researcher'
@@ -22,6 +37,8 @@ const MEDICINE_CACHE_KEY = 'dawadaam_cached_popular_v1'
 
 type CatalogMedicine = ReturnType<typeof mapMedicine>
 type SortMode = 'lowest-price' | 'most-popular' | 'highest-savings' | 'name'
+type OpenMenu = 'category' | 'sort' | null
+type MenuPosition = { top: number; left: number }
 type PendingLivePage = {
   category: Category | null
   searchTerm: string | null
@@ -164,6 +181,9 @@ export function MedicineSearch() {
   const [selectedMedicine, setSelectedMedicine] = useState<CatalogMedicine | null>(null)
   const [activeCategory, setActiveCategory] = useState<Category | null>(null)
   const [sortMode, setSortMode] = useState<SortMode>('lowest-price')
+  const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
+  const [categorySearch, setCategorySearch] = useState('')
+  const [menuPosition, setMenuPosition] = useState<MenuPosition>({ top: 0, left: 0 })
   const [isBrowseLoading, setIsBrowseLoading] = useState(true)
   const [isAppending, setIsAppending] = useState(false)
   const [isLoadingLivePage, setIsLoadingLivePage] = useState(false)
@@ -185,6 +205,8 @@ export function MedicineSearch() {
   const retryOnResumeRef = useRef(false)
   const retryRunningRef = useRef(false)
   const retryAutocompleteRef = useRef<(() => Promise<void>) | null>(null)
+  const categoryTriggerRef = useRef<HTMLButtonElement>(null)
+  const sortTriggerRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (window.matchMedia('(pointer: fine)').matches) inputRef.current?.focus()
@@ -198,6 +220,39 @@ export function MedicineSearch() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  useEffect(() => {
+    if (!openMenu) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenMenu(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [openMenu])
+
+  useEffect(() => {
+    if (!openMenu) return
+    const updatePosition = () => {
+      const trigger = openMenu === 'category' ? categoryTriggerRef.current : sortTriggerRef.current
+      if (!trigger) return
+      const bounds = trigger.getBoundingClientRect()
+      const menuWidth = openMenu === 'category' ? 384 : 320
+      const left = openMenu === 'sort'
+        ? bounds.right - menuWidth
+        : bounds.left
+      setMenuPosition({
+        top: bounds.bottom + 8,
+        left: Math.min(Math.max(12, left), window.innerWidth - menuWidth - 12),
+      })
+    }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [openMenu])
 
   const loadBrowse = useCallback(async (category: Category | null, keepCurrentResults = false) => {
     const currentOperation = ++operationId.current
@@ -676,6 +731,186 @@ export function MedicineSearch() {
     if (sortMode === 'name') medicines.sort((a, b) => a.name.localeCompare(b.name))
     return medicines
   }, [browseMedicines, sortMode])
+  const filteredCategories = useMemo(() => {
+    const normalizedSearch = categorySearch.trim().toLocaleLowerCase()
+    return normalizedSearch
+      ? CATEGORIES.filter((category) => category.toLocaleLowerCase().includes(normalizedSearch))
+      : CATEGORIES
+  }, [categorySearch])
+
+  const sortOptions = [
+    {
+      value: 'lowest-price' as const,
+      label: 'Lowest price',
+      description: 'Cheapest listed price across pharmacies',
+      Icon: TrendingDown,
+    },
+    {
+      value: 'highest-savings' as const,
+      label: 'Highest savings',
+      description: 'Largest difference from the listed MRP',
+      Icon: Sparkles,
+    },
+    {
+      value: 'most-popular' as const,
+      label: 'Most popular',
+      description: 'Frequently searched medicines',
+      Icon: Flame,
+    },
+    {
+      value: 'name' as const,
+      label: 'Name (A–Z)',
+      description: 'Alphabetical by medicine name',
+      Icon: ArrowDownAZ,
+    },
+  ]
+
+  const menuContents = openMenu && (
+    <>
+      <button
+        type="button"
+        aria-label="Close menu"
+        onClick={() => setOpenMenu(null)}
+        className="fixed inset-0 z-40 cursor-default bg-black/60 backdrop-blur-[2px]"
+      />
+      {openMenu === 'category' ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="category-menu-title"
+          className="fixed inset-x-0 bottom-0 z-50 rounded-t-3xl border-t border-slate-200 bg-white p-4 shadow-2xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/95 sm:inset-x-auto sm:bottom-auto sm:left-[var(--menu-left)] sm:top-[var(--menu-top)] sm:right-auto sm:w-[min(24rem,calc(100vw-1.5rem))] sm:rounded-2xl sm:border"
+          style={{
+            '--menu-top': `${menuPosition.top}px`,
+            '--menu-left': `${menuPosition.left}px`,
+          } as CSSProperties}
+        >
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 id="category-menu-title" className="text-sm font-bold text-slate-900 dark:text-white">
+                Filter by Category
+              </h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Choose a therapeutic class</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-3">
+              {activeCategory && (
+                <button
+                  type="button"
+                  onClick={() => void loadBrowse(null)}
+                  className="text-xs font-semibold text-emerald-600 hover:text-emerald-500 dark:text-emerald-400"
+                >
+                  Reset
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label="Close category menu"
+                onClick={() => setOpenMenu(null)}
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+              >
+                <X className="size-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+          <label className="relative block">
+            <span className="sr-only">Search categories</span>
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+            <input
+              type="search"
+              value={categorySearch}
+              onChange={(event) => setCategorySearch(event.target.value)}
+              placeholder={`Filter ${CATEGORIES.length} categories...`}
+              className="h-8 w-full rounded-xl border border-slate-200 bg-slate-100 pl-8 pr-3 text-xs text-slate-900 outline-none placeholder:text-slate-500 focus:border-emerald-500/50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
+            />
+          </label>
+          <div className="mt-3 grid max-h-[55vh] grid-cols-2 gap-2 overflow-y-auto pr-1">
+            {[
+              { value: null, label: 'All medicines' },
+              ...filteredCategories.map((category) => ({ value: category, label: category })),
+            ].map(({ value, label }) => {
+              const selected = activeCategory === value
+              return (
+                <button
+                  key={value ?? 'all'}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => {
+                    setOpenMenu(null)
+                    void loadBrowse(value)
+                  }}
+                  className={cn(
+                    'flex min-w-0 items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left text-xs font-medium transition-all',
+                    selected
+                      ? 'border-emerald-500/50 bg-emerald-500/15 font-semibold text-emerald-700 shadow-sm dark:text-emerald-300'
+                      : 'border-slate-200 bg-slate-100 text-slate-700 hover:border-slate-300 hover:bg-slate-200 dark:border-slate-800/90 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-800/80',
+                  )}
+                >
+                  <span className="truncate">{label}</span>
+                  {selected && <Check className="size-3.5 shrink-0 text-emerald-500 dark:text-emerald-400" aria-hidden="true" />}
+                </button>
+              )
+            })}
+            {filteredCategories.length === 0 && (
+              <p className="col-span-2 py-4 text-center text-xs text-slate-500">No matching categories</p>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sort-menu-title"
+          className="fixed inset-x-0 bottom-0 z-50 rounded-t-3xl border-t border-slate-200 bg-white p-4 shadow-2xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/95 sm:inset-x-auto sm:bottom-auto sm:left-[var(--menu-left)] sm:top-[var(--menu-top)] sm:right-auto sm:w-80 sm:rounded-2xl sm:border"
+          style={{
+            '--menu-top': `${menuPosition.top}px`,
+            '--menu-left': `${menuPosition.left}px`,
+          } as CSSProperties}
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <h2 id="sort-menu-title" className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Sort medicines by
+            </h2>
+            <button
+              type="button"
+              aria-label="Close sort menu"
+              onClick={() => setOpenMenu(null)}
+              className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+            >
+              <X className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {sortOptions.map(({ value, label, description, Icon }) => {
+              const selected = sortMode === value
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => {
+                    setSortMode(value)
+                    setOpenMenu(null)
+                  }}
+                  className={cn(
+                    'flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors',
+                    selected
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                      : 'border-transparent text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900',
+                  )}
+                >
+                  <Icon className="size-4 shrink-0 text-emerald-500 dark:text-emerald-400" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-semibold">{label}</span>
+                    <span className="block text-[10px] text-slate-500 dark:text-slate-400">{description}</span>
+                  </span>
+                  {selected && <Check className="size-3.5 shrink-0 text-emerald-500 dark:text-emerald-400" aria-hidden="true" />}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </>
+  )
 
   return (
     <section className="box-border flex w-full min-w-0 max-w-full flex-col gap-6 overflow-hidden" aria-label="Find and compare medicines">
@@ -746,46 +981,54 @@ export function MedicineSearch() {
           )}
         </div>
 
-        <div className="relative mt-2.5 grid grid-cols-2 items-center gap-3" role="group" aria-label="Filter and sort medicines">
-          <label className="relative flex min-w-0 items-center">
-            <SlidersHorizontal className="pointer-events-none absolute left-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
-            <span className="sr-only">Filter by category</span>
-            <select
-              value={activeCategory ?? ''}
-              onChange={(event) => {
-                const value = event.target.value
-                if (value === '' || value === '__clear__') {
-                  void loadBrowse(null)
-                } else if (CATEGORIES.includes(value as Category)) {
-                  void loadBrowse(value as Category)
-                }
-              }}
-              className="h-11 w-full min-w-0 appearance-none rounded-full border border-slate-200 bg-white pl-9 pr-8 text-xs font-medium text-slate-800 shadow-sm outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-            >
-              <option value="">All medicines</option>
-              {CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
-              <option value="__clear__">Clear category filter</option>
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
-          </label>
-          <span className="pointer-events-none absolute left-1/2 top-1/2 z-10 h-5 w-px -translate-x-1/2 -translate-y-1/2 bg-slate-300 dark:bg-slate-700" aria-hidden="true" />
-          <label className="relative flex min-w-0 items-center">
-            <ArrowUpDown className="pointer-events-none absolute left-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
-            <span className="sr-only">Sort medicines</span>
-            <select
-              value={sortMode}
-              onChange={(event) => setSortMode(event.target.value as SortMode)}
-              className="h-11 w-full min-w-0 appearance-none rounded-full border border-slate-200 bg-white pl-9 pr-8 text-xs font-medium text-slate-800 shadow-sm outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-            >
-              <option value="lowest-price">Sort: Lowest price</option>
-              <option value="most-popular">Sort: Most popular</option>
-              <option value="highest-savings">Sort: Highest savings</option>
-              <option value="name">Sort: Name (A–Z)</option>
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3 size-4 text-slate-500 dark:text-slate-300" aria-hidden="true" />
-          </label>
+        <div className="my-3 grid grid-cols-2 gap-2.5" role="group" aria-label="Filter and sort medicines">
+          <button
+            ref={categoryTriggerRef}
+            type="button"
+            aria-label={`Filter by category: ${activeCategory ?? 'All medicines'}`}
+            aria-expanded={openMenu === 'category'}
+            onClick={() => {
+              setCategorySearch('')
+              setOpenMenu(openMenu === 'category' ? null : 'category')
+            }}
+            className={cn(
+              'flex h-11 min-w-0 items-center gap-2 rounded-full border px-3 text-left shadow-sm transition-colors',
+              activeCategory
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                : 'border-slate-200 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100',
+            )}
+          >
+            <SlidersHorizontal className="size-4 shrink-0 text-emerald-500 dark:text-emerald-400" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate text-xs font-medium">{activeCategory ?? 'All medicines'}</span>
+            {activeCategory && <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />}
+            <ChevronDown
+              className={cn('size-4 shrink-0 text-slate-500 transition-transform dark:text-slate-300', openMenu === 'category' && 'rotate-180')}
+              aria-hidden="true"
+            />
+          </button>
+          <button
+            ref={sortTriggerRef}
+            type="button"
+            aria-label={`Sort: ${sortOptions.find(({ value }) => value === sortMode)?.label ?? 'Lowest price'}`}
+            aria-expanded={openMenu === 'sort'}
+            onClick={() => setOpenMenu(openMenu === 'sort' ? null : 'sort')}
+            className="flex h-11 min-w-0 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-left text-slate-800 shadow-sm transition-colors dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          >
+            <ArrowUpDown className="size-4 shrink-0 text-emerald-500 dark:text-emerald-400" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate text-xs font-medium">
+              Sort: {sortOptions.find(({ value }) => value === sortMode)?.label ?? 'Lowest price'}
+            </span>
+            <ChevronDown
+              className={cn('size-4 shrink-0 text-slate-500 transition-transform dark:text-slate-300', openMenu === 'sort' && 'rotate-180')}
+              aria-hidden="true"
+            />
+          </button>
         </div>
       </div>
+      {typeof document !== 'undefined' && menuContents && createPortal(
+        menuContents,
+        document.body,
+      )}
 
       {error && (
         <p className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert">
