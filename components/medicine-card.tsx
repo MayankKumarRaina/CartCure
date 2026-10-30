@@ -3,7 +3,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Check, ChevronDown, FileText, Minus, Plus, ShoppingCart } from 'lucide-react'
-import { PLATFORMS, type CatalogMedicine, type Platform, type PlatformId, type WellnessPartnerId } from '@/lib/data'
+import {
+  PLATFORMS,
+  resolveMedicinePrices,
+  type CatalogMedicine,
+  type Platform,
+  type PlatformId,
+  type WellnessPartnerId,
+} from '@/lib/data'
 import { formatINR } from '@/lib/pricing'
 import { useCart } from '@/components/cart-provider'
 import { getAffiliateUrl, hasAffiliateLink, trackAndOpenStore, WELLNESS_PARTNERS } from '@/lib/affiliates'
@@ -149,6 +156,7 @@ type ComparisonStore = {
   badge: string
   brandStyle: string
   price: number | null
+  isEstimate: boolean
   href: string
   hasAffiliate: boolean
 }
@@ -157,7 +165,8 @@ function pharmacyUrl(platform: Platform, medicine: CatalogMedicine) {
   return getAffiliateUrl(platform.id, medicine.productUrls?.[platform.id] ?? platform.searchUrl(medicine.name))
 }
 
-export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
+export function MedicineCard({ medicine: inputMedicine }: { medicine: CatalogMedicine }) {
+  const medicine = resolveMedicinePrices(inputMedicine)
   const { items, add, increment, decrement, loadingPriceIds, resolveLivePrices } = useCart()
   const qty = items[medicine.id] ?? 0
   const isPriceLoading = loadingPriceIds.has(medicine.id)
@@ -169,12 +178,14 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
   const [isCheckingWellnessPrices, setIsCheckingWellnessPrices] = useState(false)
   const cardRef = useRef<HTMLElement>(null)
   const wellnessCheckAttempted = useRef(false)
+  const automaticPriceCheckAttempted = useRef(false)
 
   const comparisonStores: ComparisonStore[] = [
     ...PLATFORMS.map((platform) => {
       const price = medicine.prices[platform.id]
+      const isEstimate = medicine.estimatedPricePlatforms?.includes(platform.id) ?? false
       const available = price > 0
-        && (medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.includes(platform.id))
+        && (isEstimate || medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.includes(platform.id))
       return {
         id: platform.id,
         name: platform.name,
@@ -182,46 +193,60 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
         badge: platform.id === 'tata1mg' ? '1mg' : platform.id === 'netmeds' ? '+' : platform.shortName.slice(0, 2),
         brandStyle: BRAND_STYLES[platform.id],
         price: available ? price : null,
+        isEstimate: available && isEstimate,
         href: pharmacyUrl(platform, medicine),
         hasAffiliate: hasAffiliateLink(platform.id),
       }
     }),
-    ...WELLNESS_PARTNERS.map((partner) => ({
-      id: partner.id,
-      name: partner.name,
-      shortName: partner.name,
-      badge: partner.badge,
-      brandStyle: WELLNESS_BRAND_STYLES[partner.id],
-      price: Object.prototype.hasOwnProperty.call(wellnessPrices, partner.id)
-        ? wellnessPrices[partner.id] ?? null
-        : medicine.prices[partner.id] ?? null,
-      href: getAffiliateUrl(partner.id, `https://${partner.id}.com`),
-      hasAffiliate: hasAffiliateLink(partner.id),
-    })),
+    ...WELLNESS_PARTNERS.map((partner) => {
+      const hasCheckedPrice = Object.prototype.hasOwnProperty.call(wellnessPrices, partner.id)
+      return {
+        id: partner.id,
+        name: partner.name,
+        shortName: partner.name,
+        badge: partner.badge,
+        brandStyle: WELLNESS_BRAND_STYLES[partner.id],
+        price: hasCheckedPrice ? wellnessPrices[partner.id] ?? null : medicine.prices[partner.id] ?? null,
+        isEstimate: !hasCheckedPrice && (medicine.estimatedPricePlatforms?.includes(partner.id) ?? false),
+        href: getAffiliateUrl(partner.id, `https://${partner.id}.com`),
+        hasAffiliate: hasAffiliateLink(partner.id),
+      }
+    }),
   ]
   const isAvailablePrice = (store: ComparisonStore): store is ComparisonStore & { price: number } => (
     typeof store.price === 'number' && Number.isFinite(store.price) && store.price > 0
   )
   const pricedStores = comparisonStores.filter(isAvailablePrice)
-  const winner = [...pricedStores].sort((a, b) => (
-    a.price - b.price || Number(b.hasAffiliate) - Number(a.hasAffiliate)
+  const pharmacyStores = pricedStores.filter(({ id }) => PLATFORMS.some((platform) => platform.id === id))
+  const winner = [...pharmacyStores].sort((a, b) => (
+    Number(a.isEstimate) - Number(b.isEstimate)
+      || a.price - b.price
+      || Number(b.hasAffiliate) - Number(a.hasAffiliate)
   ))[0]
-  const runnerUps = pricedStores
+  const runnerUps = pharmacyStores
     .filter(({ id }) => id !== winner?.id)
-    .sort((a, b) => Number(b.hasAffiliate) - Number(a.hasAffiliate) || a.price - b.price)
+    .sort((a, b) => Number(a.isEstimate) - Number(b.isEstimate)
+      || Number(b.hasAffiliate) - Number(a.hasAffiliate)
+      || a.price - b.price)
     .slice(0, 3)
   const sortedComparisonStores = [...comparisonStores].sort((a, b) => {
     const group = (store: ComparisonStore) => (
       isAvailablePrice(store) ? (store.hasAffiliate ? 0 : 1) : 2
     )
+    const estimateGroup = (store: ComparisonStore) => (
+      isAvailablePrice(store) && store.isEstimate ? 1 : 0
+    )
     return group(a) - group(b)
-      || (isAvailablePrice(a) && isAvailablePrice(b) ? a.price - b.price : 0)
+    || estimateGroup(a) - estimateGroup(b)
+    || (isAvailablePrice(a) && isAvailablePrice(b) ? a.price - b.price : 0)
   })
 
   useEffect(() => {
+    if (automaticPriceCheckAttempted.current) return
     const element = cardRef.current
     if (!element) return
 
+    automaticPriceCheckAttempted.current = true
     if (typeof IntersectionObserver === 'undefined') {
       void resolveLivePrices(medicine).catch((error: unknown) => {
         console.error(`Unable to refresh prices for ${medicine.id}:`, error)
@@ -239,7 +264,7 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
     }, { rootMargin: '80px' })
     observer.observe(element)
     return () => observer.disconnect()
-  }, [medicine, resolveLivePrices])
+  }, [medicine.id, resolveLivePrices])
 
   function showOffers() {
     void resolveLivePrices(medicine).catch((error: unknown) => {
@@ -310,7 +335,7 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
     setIsExpanded((current) => {
       const next = !current
       if (next) {
-        if (!winner) showOffers()
+        if (!winner || medicine.estimatedPricePlatforms?.length) showOffers()
         void checkWellnessPrices()
       }
       return next
@@ -355,7 +380,7 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
               RX
             </span>
           )}
-          <span className="mt-1 text-[11px] font-medium text-slate-400">MRP {formatINR(medicine.mrp)}</span>
+          <span className="mt-1 shrink-0 whitespace-nowrap text-[11px] font-medium text-slate-400">MRP {formatINR(medicine.mrp)}</span>
         </div>
       </div>
 
@@ -372,29 +397,31 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
                 targetUrl: winner.href,
                 medicineId: medicine.id,
                 medicineName: medicine.name,
-                clickedPrice: winner.price,
+                clickedPrice: winner.isEstimate ? null : winner.price,
                 sourceComponent: 'card_hero',
               })
             }}
-            aria-label={`View ${medicine.name} at ${winner.name} for ${formatINR(winner.price)}`}
+            aria-label={`View ${medicine.name} at ${winner.name} for ${winner.isEstimate ? `an estimated ${formatINR(winner.price)}` : formatINR(winner.price)}`}
             className="flex min-w-0 flex-1 items-center justify-start gap-2.5 rounded-xl border border-emerald-500/40 bg-emerald-50/70 px-3 py-2 transition-colors hover:bg-emerald-100 dark:bg-emerald-950/35 dark:hover:bg-emerald-950/70"
           >
             <span className="min-w-0">
               <span className="flex items-center gap-1">
-                <span className="text-[17px] font-extrabold leading-none text-emerald-600 dark:text-emerald-400 sm:text-lg">
+                <span className="shrink-0 whitespace-nowrap text-[17px] font-extrabold leading-none text-emerald-600 dark:text-emerald-400 sm:text-lg">
                   {formatINR(winner.price)}
                 </span>
-                <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8.5px] font-extrabold uppercase tracking-wider text-slate-950">
-                  Lowest
+                <span className="shrink-0 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8.5px] font-extrabold uppercase tracking-wider text-slate-950">
+                  {winner.isEstimate ? 'Estimate' : 'Lowest'}
                 </span>
               </span>
-              <span className="mt-1 block truncate text-[10.5px] font-medium text-emerald-700/90 dark:text-emerald-400/90">
-                Save {formatINR(Math.max(0, medicine.mrp - winner.price))} vs MRP
+              <span className="mt-1 block shrink-0 whitespace-nowrap text-[10.5px] font-medium text-emerald-700/90 dark:text-emerald-400/90">
+                {winner.isEstimate
+                  ? 'MRP-based estimate'
+                  : `Save ${formatINR(Math.max(0, medicine.mrp - winner.price))} vs MRP`}
               </span>
             </span>
             <span className="mx-1 h-7 w-px shrink-0 bg-emerald-500/30" aria-hidden="true" />
-            <span className="min-w-0 truncate text-xs font-semibold text-slate-700 dark:text-slate-200">
-              <span className="truncate">{winner.shortName}</span>
+            <span className="shrink-0 whitespace-nowrap text-xs font-semibold text-slate-700 dark:text-slate-200">
+              {winner.shortName}
             </span>
           </a>
         ) : (
@@ -405,8 +432,8 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
             className="flex min-w-0 flex-1 items-center justify-start gap-2.5 rounded-xl border border-emerald-500/40 bg-emerald-50/70 px-3 py-2 text-left dark:bg-emerald-950/35"
           >
             <span>
-              <span className="block text-[17px] font-extrabold leading-none text-emerald-600 dark:text-emerald-400 sm:text-lg">
-                ₹---
+              <span className="block whitespace-nowrap text-[17px] font-extrabold leading-none text-emerald-600 dark:text-emerald-400 sm:text-lg">
+                Unavailable
               </span>
               <span className="text-[11px] font-medium text-emerald-700/90 dark:text-emerald-400/90">
                 View offers
@@ -419,14 +446,14 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
           type="button"
           onClick={toggleComparison}
           aria-expanded={isExpanded}
-          className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-700/80 bg-slate-900/80 px-2.5 py-1.5 text-[11px] font-semibold text-teal-400"
+          className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-slate-100 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-200 dark:border-slate-700/80 dark:bg-slate-900/80 dark:text-teal-400 dark:hover:bg-slate-900"
         >
           Compare {totalStoreCount}
           <ChevronDown className={cn('size-3.5 transition-transform', isExpanded && 'rotate-180')} aria-hidden="true" />
         </button>
       </div>
 
-      <div className="box-border mt-2 grid w-full min-w-0 max-w-full grid-cols-[repeat(3,minmax(0,1fr))_46px_auto] items-stretch gap-1.5 overflow-hidden">
+      <div className="mt-2 grid w-full min-w-0 grid-cols-3 gap-1.5">
         {runnerUps.map((platform) => (
           <a
             key={platform.id}
@@ -440,33 +467,36 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
                 targetUrl: platform.href,
                 medicineId: medicine.id,
                 medicineName: medicine.name,
-                clickedPrice: platform.price,
+                clickedPrice: platform.isEstimate ? null : platform.price,
                 sourceComponent: 'card_chip',
               })
             }}
-            aria-label={`View ${medicine.name} at ${platform.shortName} for ${formatINR(platform.price)}`}
-            className="flex min-w-0 items-center gap-1.5 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/90 px-1.5 py-1.5"
+            aria-label={`View ${medicine.name} at ${platform.shortName} for ${platform.isEstimate ? `an estimated ${formatINR(platform.price)}` : formatINR(platform.price)}`}
+            className="flex min-w-0 items-center justify-between gap-1.5 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 dark:border-slate-800 dark:bg-slate-900/90"
           >
-            <span className={cn('flex size-5 shrink-0 items-center justify-center rounded-full text-[8px] font-extrabold', platform.brandStyle)}>
+            <span className={cn('flex size-4 shrink-0 items-center justify-center rounded-full text-[8px] font-bold sm:size-5', platform.brandStyle)}>
               {platform.badge}
             </span>
-            <span className="min-w-0 flex-1 leading-tight">
-              <span className="block truncate text-[9.5px] font-medium leading-tight text-slate-400">{platform.shortName}</span>
-              <span className="block truncate text-[11px] font-bold leading-tight text-slate-100">
-                {formatINR(platform.price)}
-              </span>
+            <span className="min-w-0 flex-1 truncate text-[10px] font-medium text-slate-600 dark:text-slate-300 sm:text-[11px]">
+              {platform.shortName}
+            </span>
+            <span className="shrink-0 whitespace-nowrap text-[11px] font-extrabold text-slate-900 dark:text-white sm:text-xs">
+              {platform.isEstimate && '~'}{formatINR(platform.price)}
             </span>
           </a>
         ))}
+      </div>
+
+      <div className="mt-2 flex w-full min-w-0 items-center justify-between gap-2">
         <button
           type="button"
           onClick={toggleComparison}
           aria-expanded={isExpanded}
-          className="flex min-w-0 flex-col items-center justify-center whitespace-nowrap rounded-xl border border-slate-800 bg-slate-900/70 px-1 py-1.5 text-[9.5px] font-semibold leading-tight text-slate-300"
+          className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-200 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-900"
         >
-          +{Math.max(0, totalStoreCount - (winner ? 1 : 0) - runnerUps.length)} more
+          +{Math.max(0, totalStoreCount - (winner ? 1 : 0) - runnerUps.length)} more stores
+          <ChevronDown className={cn('size-3.5 transition-transform', isExpanded && 'rotate-180')} aria-hidden="true" />
         </button>
-
         <AnimatePresence mode="popLayout" initial={false}>
           {qty === 0 || justAdded ? (
             <motion.button
@@ -479,12 +509,12 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ type: 'spring', stiffness: 500, damping: 30 }}
               className={cn(
-                'inline-flex min-w-0 items-center justify-center gap-1 rounded-xl bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-950 transition-colors hover:bg-emerald-300',
+                'inline-flex min-w-[110px] flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 shadow-sm transition-colors hover:bg-emerald-400 sm:flex-initial',
                 justAdded && 'bg-emerald-500',
               )}
             >
               {justAdded ? <Check className="size-4" aria-hidden="true" /> : <ShoppingCart className="size-4" aria-hidden="true" />}
-              {justAdded ? 'Added' : 'Add'}
+              {justAdded ? 'Added' : '+ Add to Basket'}
             </motion.button>
           ) : (
             <motion.div
@@ -493,7 +523,7 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-              className="flex h-full min-w-0 items-center justify-center rounded-xl border border-emerald-500/40 bg-slate-900"
+              className="flex h-full min-w-[110px] flex-1 items-center justify-center rounded-xl border border-emerald-500/40 bg-slate-50 sm:flex-initial dark:bg-slate-900"
             >
               <button
                 type="button"
@@ -516,6 +546,11 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
           )}
         </AnimatePresence>
       </div>
+      {medicine.estimatedPricePlatforms?.length ? (
+        <p className="mt-1.5 text-[10px] leading-tight text-slate-500 dark:text-slate-400">
+          Estimated from MRP; verify the price with the store.
+        </p>
+      ) : null}
 
       <AnimatePresence initial={false}>
         {isExpanded && (
@@ -549,25 +584,25 @@ export function MedicineCard({ medicine }: { medicine: CatalogMedicine }) {
                         targetUrl: store.href,
                         medicineId: medicine.id,
                         medicineName: medicine.name,
-                        clickedPrice: store.price,
+                        clickedPrice: store.isEstimate ? null : store.price,
                         sourceComponent: 'card_drawer',
                       })
                     }}
                     aria-label={`View ${medicine.name} at ${store.name}`}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2"
+                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/60"
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       <span className={cn('flex size-7 shrink-0 items-center justify-center rounded-full text-[9px] font-bold', store.brandStyle)}>
                         {store.badge}
                       </span>
-                      <span className="truncate text-sm font-medium text-slate-200">{store.name}</span>
+                      <span className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">{store.name}</span>
                     </span>
                     <span className={cn(
-                      'shrink-0 text-sm',
-                      hasPrice ? 'font-bold text-white' : 'font-semibold text-slate-500',
+                      'shrink-0 whitespace-nowrap text-sm',
+                      hasPrice ? 'font-bold text-slate-900 dark:text-white' : 'font-semibold text-slate-500',
                     )}>
                       {hasPrice
-                        ? formatINR(availablePrice)
+                        ? `${store.isEstimate ? '~' : ''}${formatINR(availablePrice)}`
                         : isWellnessPartner && isCheckingWellnessPrices
                           ? '...'
                           : priceCheckFailed

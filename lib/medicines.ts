@@ -1,4 +1,14 @@
-import { CATEGORIES, MEDICINES, type CatalogMedicine, type Category, type Medicine, type PharmacyPrice, type PlatformId } from './data'
+import {
+  CATEGORIES,
+  MEDICINES,
+  resolveMedicinePrices,
+  type CatalogMedicine,
+  type Category,
+  type Medicine,
+  type MedicineSearchResult,
+  type PharmacyPrice,
+  type PlatformId,
+} from './data'
 import { supabase } from './supabase'
 
 const categories = new Set<Category>(CATEGORIES)
@@ -10,24 +20,38 @@ const platformIds: Record<string, PlatformId> = {
   truemeds: 'truemeds',
 }
 
-export function mapMedicine(row: Medicine, pharmacyPrices?: PharmacyPrice[]): CatalogMedicine {
+export function mapMedicine(
+  row: Medicine | MedicineSearchResult,
+  pharmacyPrices?: PharmacyPrice[],
+): CatalogMedicine {
+  const cachedPrices = pharmacyPrices
+    ?? ('pharmacyPrices' in row ? row.pharmacyPrices : undefined)
   const prices: Record<PlatformId, number> = {
-    tata1mg: pharmacyPrices === undefined ? row.mrp : 0,
-    pharmeasy: pharmacyPrices === undefined ? row.mrp : 0,
-    netmeds: pharmacyPrices === undefined ? row.mrp : 0,
-    apollo: pharmacyPrices === undefined ? row.mrp : 0,
-    truemeds: pharmacyPrices === undefined ? row.mrp : 0,
+    tata1mg: cachedPrices === undefined ? row.mrp : 0,
+    pharmeasy: cachedPrices === undefined ? row.mrp : 0,
+    netmeds: cachedPrices === undefined ? row.mrp : 0,
+    apollo: cachedPrices === undefined ? row.mrp : 0,
+    truemeds: cachedPrices === undefined ? row.mrp : 0,
   }
   const livePricePlatforms = new Set<PlatformId>()
-  for (const price of pharmacyPrices ?? []) {
+  const latestPrices = new Map<PlatformId, PharmacyPrice>()
+  for (const price of cachedPrices ?? []) {
     const platformId = platformIds[price.platform_name.trim().toLowerCase()]
     if (!platformId) continue
-    prices[platformId] = Number(price.price) || 0
+    const parsedPrice = Number(price.price)
+    if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) continue
+    const currentPrice = latestPrices.get(platformId)
+    if (!currentPrice || Date.parse(price.updated_at) > Date.parse(currentPrice.updated_at)) {
+      latestPrices.set(platformId, price)
+    }
+  }
+  for (const [platformId, price] of latestPrices) {
+    prices[platformId] = Number(price.price)
     livePricePlatforms.add(platformId)
   }
   const normalizedCategory = row.category.trim()
   const mappedCategories = categories.has(normalizedCategory as Category) ? [normalizedCategory as Category] : []
-  return {
+  const catalogMedicine: CatalogMedicine = {
     id: row.id,
     name: row.brand_name,
     pack: row.pack_size ?? '',
@@ -36,10 +60,16 @@ export function mapMedicine(row: Medicine, pharmacyPrices?: PharmacyPrice[]): Ca
     mrp: row.mrp,
     categories: mappedCategories,
     rxRequired: row.is_rx_required,
-    prices,
-    livePricePlatforms: [...livePricePlatforms],
-    pharmacyPrices,
+    prices: 'resolvedPrices' in row ? row.resolvedPrices : prices,
+    livePricePlatforms: 'livePricePlatforms' in row
+      ? row.livePricePlatforms
+      : [...livePricePlatforms],
+    estimatedPricePlatforms: 'estimatedPricePlatforms' in row
+      ? row.estimatedPricePlatforms
+      : undefined,
+    pharmacyPrices: cachedPrices,
   }
+  return resolveMedicinePrices(catalogMedicine)
 }
 
 export async function loadMedicines(): Promise<{ medicines: CatalogMedicine[]; source: 'live' | 'demo' }> {

@@ -1,5 +1,12 @@
 import { NextResponse } from 'next/server'
-import { CATEGORIES, type Category, type Medicine } from '@/lib/data'
+import {
+  CATEGORIES,
+  type Category,
+  type Medicine,
+  type MedicineSearchResult,
+  type PharmacyPrice,
+} from '@/lib/data'
+import { mapMedicine } from '@/lib/medicines'
 import { supabase } from '@/lib/supabase'
 
 const CACHE_HEADERS = {
@@ -17,6 +24,36 @@ function numberParameter(value: string | null, fallback: number, maximum: number
   if (value === null) return fallback
   const parsed = Number(value)
   return Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= maximum ? parsed : null
+}
+
+async function resolveRows(rows: Medicine[]): Promise<MedicineSearchResult[]> {
+  if (rows.length === 0) return []
+
+  const { data: priceRows, error } = await supabase
+    .from('pharmacy_prices')
+    .select('medicine_id, platform_name, price, updated_at')
+    .in('medicine_id', rows.map(({ id }) => id))
+    .order('updated_at', { ascending: false })
+  if (error) throw error
+
+  const pricesByMedicine = new Map<string, PharmacyPrice[]>()
+  for (const price of priceRows) {
+    const prices = pricesByMedicine.get(price.medicine_id) ?? []
+    prices.push(price)
+    pricesByMedicine.set(price.medicine_id, prices)
+  }
+
+  return rows.map((row) => {
+    const pharmacyPrices = pricesByMedicine.get(row.id) ?? []
+    const resolved = mapMedicine(row, pharmacyPrices)
+    return {
+      ...row,
+      pharmacyPrices,
+      resolvedPrices: resolved.prices,
+      livePricePlatforms: resolved.livePricePlatforms ?? [],
+      estimatedPricePlatforms: resolved.estimatedPricePlatforms ?? [],
+    }
+  })
 }
 
 export async function GET(request: Request) {
@@ -50,7 +87,10 @@ export async function GET(request: Request) {
       if (saltResult.error) throw saltResult.error
       const uniqueRows = new Map<string, Medicine>()
       for (const medicine of [...brandResult.data, ...saltResult.data]) uniqueRows.set(medicine.id, medicine)
-      return NextResponse.json([...uniqueRows.values()].slice(0, limit), { headers: CACHE_HEADERS })
+      return NextResponse.json(
+        await resolveRows([...uniqueRows.values()].slice(0, limit)),
+        { headers: CACHE_HEADERS },
+      )
     }
 
     let medicineQuery = supabase.from('medicines').select('*')
@@ -67,7 +107,7 @@ export async function GET(request: Request) {
       .order('id', { ascending: true })
       .range(offset, offset + limit - 1)
     if (error) throw error
-    return NextResponse.json(data, { headers: CACHE_HEADERS })
+    return NextResponse.json(await resolveRows(data), { headers: CACHE_HEADERS })
   } catch (error) {
     console.error('Unable to retrieve medicine search results:', error)
     return NextResponse.json({ error: 'Unable to retrieve medicine search results.' }, { status: 500 })

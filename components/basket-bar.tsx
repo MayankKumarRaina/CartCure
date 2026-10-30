@@ -19,6 +19,9 @@ export function BasketBar() {
   // 2. Pass platforms into quoteAll so it uses Supabase auto-detected memberships
   const quotes = useMemo(() => quoteAll(cartLines, platforms), [cartLines, platforms])
   const best = useMemo(() => bestOption(quotes, false), [quotes])
+  const bestUsesEstimate = Boolean(best && cartLines.some((line) => (
+    line.medicine.estimatedPricePlatforms?.includes(best.platform.id)
+  )))
 
   return (
     <AnimatePresence>
@@ -44,13 +47,15 @@ export function BasketBar() {
                 {isPriceLoading ? (
                   <span className="inline-block h-4 w-20 animate-pulse rounded bg-slate-200 align-middle dark:bg-slate-700" aria-label="Loading prices" />
                 ) : (
-                  <>from {formatINR(best.cost)}</>
+                  <>from {bestUsesEstimate ? '≈' : ''}{formatINR(best.cost)}</>
                 )}
               </span>
               <span className="text-[11px] text-slate-600 dark:text-slate-400">
                 {isPriceLoading
                   ? 'Fetching competitor prices…'
-                  : <>Cheapest on {best.platform.name}{best.savings > 0 ? ` · save ${formatINR(best.savings)}` : ''}</>}
+                  : bestUsesEstimate
+                    ? 'Uses MRP-based estimates; verify the store price'
+                    : <>Cheapest on {best.platform.name}{best.savings > 0 ? ` · save ${formatINR(best.savings)}` : ''}</>}
               </span>
             </span>
             <span className="flex items-center gap-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">

@@ -1,5 +1,6 @@
 export type PlatformId = 'tata1mg' | 'pharmeasy' | 'netmeds' | 'apollo' | 'truemeds'
 export type WellnessPartnerId = 'healthkart' | 'truebasics'
+export type PriceStoreId = PlatformId | WellnessPartnerId
 export type MedicinePrices = Record<PlatformId, number> & Partial<Record<WellnessPartnerId, number | null>>
 
 export const CATEGORIES = [
@@ -71,6 +72,7 @@ export type CatalogMedicine = {
   rxRequired: boolean
   prices: MedicinePrices
   livePricePlatforms?: PlatformId[]
+  estimatedPricePlatforms?: PriceStoreId[]
   pharmacyPrices?: PharmacyPrice[]
   productUrls?: Partial<Record<PlatformId, string>>
 }
@@ -80,6 +82,89 @@ export type PharmacyPrice = {
   platform_name: string
   price: number
   updated_at: string
+}
+
+export type MedicineSearchResult = Medicine & {
+  pharmacyPrices: PharmacyPrice[]
+  resolvedPrices: MedicinePrices
+  livePricePlatforms: PlatformId[]
+  estimatedPricePlatforms: PriceStoreId[]
+}
+
+function stableHash(value: string) {
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+function estimatedPrice(mrp: number, seed: string, minimumDiscount: number, discountRange: number) {
+  const hash = stableHash(seed)
+  const discount = minimumDiscount + (hash % discountRange) / 100
+  return Math.round(mrp * (1 - discount))
+}
+
+export function resolveMedicinePrices(medicine: CatalogMedicine): CatalogMedicine {
+  if (!Number.isFinite(medicine.mrp) || medicine.mrp <= 0) return medicine
+
+  const prices = { ...medicine.prices }
+  const estimatedPlatforms = new Set(medicine.estimatedPricePlatforms ?? [])
+  const reservedPrices = new Set<number>()
+  const platformIds: PlatformId[] = ['truemeds', 'pharmeasy', 'netmeds', 'tata1mg', 'apollo']
+  const minimumPrice = Math.round(medicine.mrp * 0.8)
+  const maximumPrice = Math.round(medicine.mrp * 0.92)
+  const priceRange = Math.max(1, maximumPrice - minimumPrice + 1)
+
+  for (const platformId of platformIds) {
+    const currentPrice = prices[platformId]
+    if (typeof currentPrice === 'number' && Number.isFinite(currentPrice) && currentPrice > 0) {
+      if (!estimatedPlatforms.has(platformId)) {
+        reservedPrices.add(currentPrice)
+        continue
+      }
+    }
+
+    let price = estimatedPrice(
+      medicine.mrp,
+      `${medicine.id}:${medicine.name}:${platformId}`,
+      0.08,
+      13,
+    )
+    let attempts = 0
+    while (reservedPrices.has(price) && attempts < priceRange) {
+      price = minimumPrice + ((price - minimumPrice + 1) % priceRange)
+      attempts += 1
+    }
+    prices[platformId] = price
+    reservedPrices.add(price)
+    estimatedPlatforms.add(platformId)
+  }
+
+  const details = `${medicine.name} ${medicine.salt} ${medicine.categories.join(' ')}`.toLowerCase()
+  const isWellness = /vitamin|calcium|calcitriol|omega|protein|zinc|d3|b12|iron|multivitamin|supplement/.test(details)
+  if (isWellness) {
+    for (const partnerId of ['healthkart', 'truebasics'] as const) {
+      const currentPrice = prices[partnerId]
+      if (typeof currentPrice === 'number' && Number.isFinite(currentPrice) && currentPrice > 0) {
+        if (!estimatedPlatforms.has(partnerId)) continue
+      }
+      prices[partnerId] = estimatedPrice(
+        medicine.mrp,
+        `${medicine.id}:${medicine.name}:${partnerId}`,
+        0.12,
+        7,
+      )
+      estimatedPlatforms.add(partnerId)
+    }
+  }
+
+  return {
+    ...medicine,
+    prices,
+    estimatedPricePlatforms: [...estimatedPlatforms],
+  }
 }
 
 export const PLATFORMS: Platform[] = [

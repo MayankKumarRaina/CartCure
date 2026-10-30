@@ -34,6 +34,7 @@ export function CartDrawer() {
   
   const cartLines = useMemo(() => toCartLines(items, medicines), [items, medicines])
   const isPriceLoading = cartLines.some((line) => loadingPriceIds.has(line.medicine.id))
+  const hasEstimatedPrices = cartLines.some((line) => line.medicine.estimatedPricePlatforms?.length)
   const quotes = useMemo(() => quoteAll(cartLines, platforms), [cartLines, platforms])
   const sortedQuotes = [...quotes].sort((a, b) => a.standardTotal - b.standardTotal)
   
@@ -57,6 +58,11 @@ export function CartDrawer() {
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-5 bg-slate-50/50 dark:bg-background">
+          {hasEstimatedPrices && (
+            <p className="rounded-xl border border-amber-300/70 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              Some pharmacy prices are MRP-based estimates, not live offers. Verify prices with the store before ordering.
+            </p>
+          )}
           {actualTotalItems === 0 ? (
             <div className="py-16 text-center text-muted-foreground text-sm flex flex-col items-center gap-3">
                <ShoppingBag className="size-10 text-slate-300 dark:text-slate-700" />
@@ -177,6 +183,9 @@ export function CartDrawer() {
                               const isSelected = activeQuote?.platform.id === quote.platform.id
                               const isCheapest = sortedQuotes[0]?.platform.id === quote.platform.id
                               const amount = row.value(quote)
+                              const usesEstimate = row.label !== 'Delivery' && cartLines.some((line) => (
+                                line.medicine.estimatedPricePlatforms?.includes(quote.platform.id)
+                              ))
                               const isSaving = row.savings && mrpTotal > quote.standardTotal
                               return (
                                 <td
@@ -191,7 +200,7 @@ export function CartDrawer() {
                                   <button
                                     type="button"
                                     onClick={() => setSelectedPlatformId(quote.platform.id)}
-                                    aria-label={`Select ${quote.platform.name}: ${row.label} ${amount}`}
+                                    aria-label={`Select ${quote.platform.name}: ${row.label} $                                    {usesEstimate ? '≈' : ''}{amount}`}
                                     className="w-full"
                                   >
                                     {isPriceLoading && !row.savings

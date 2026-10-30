@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { PLATFORMS, type Medicine } from '@/lib/data'
 import type { Database } from '@/lib/supabase'
 
 const supabaseAdmin = createClient<Database>(
@@ -8,14 +9,14 @@ const supabaseAdmin = createClient<Database>(
 )
 
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const PLATFORMS = [
+const PLATFORM_NAMES = [
   'Tata 1mg',
   'PharmEasy',
   'Netmeds',
   'Apollo Pharmacy',
   'Truemeds',
 ] as const
-const ACTIVE_PLATFORM_NAMES = new Set<string>(PLATFORMS)
+const ACTIVE_PLATFORM_NAMES = new Set<string>(PLATFORM_NAMES)
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const EDGE_CACHE_HEADERS = {
   'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
@@ -30,6 +31,120 @@ type PharmacyPrice = {
   updated_at: string
 }
 
+type ProductOffer = {
+  name: string
+  price: number
+  available: boolean
+}
+
+const IGNORED_MATCH_TOKENS = new Set([
+  'tablet', 'tablets', 'capsule', 'capsules', 'cap', 'syrup', 'drops', 'drop',
+  'injection', 'oral', 'strip', 'pack', 'of', 'mg', 'mcg', 'g', 'ml', 'iu',
+  'pr', 'sr', 'er',
+])
+
+function normalizedTokens(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/)
+    .filter((token) => token.length > 1 && !IGNORED_MATCH_TOKENS.has(token) && !/^\d+$/.test(token))
+}
+
+function matchesMedicine(productName: string, medicine: Medicine) {
+  const productTokens = new Set(normalizedTokens(productName))
+  const medicineTokens = [...new Set([
+    ...normalizedTokens(medicine.brand_name),
+    ...normalizedTokens(medicine.salt_composition ?? ''),
+  ])]
+  if (medicineTokens.length === 0) return false
+  const matchingTokens = medicineTokens.filter((token) => productTokens.has(token)).length
+  return matchingTokens >= Math.min(2, medicineTokens.length)
+}
+
+function extractProductOffers(value: unknown, offers: ProductOffer[]) {
+  if (Array.isArray(value)) {
+    for (const entry of value) extractProductOffers(entry, offers)
+    return
+  }
+  if (typeof value !== 'object' || value === null) return
+
+  const record = value as Record<string, unknown>
+  const types = Array.isArray(record['@type']) ? record['@type'] : [record['@type']]
+  if (
+    typeof record.name === 'string'
+    && types.some((type) => typeof type === 'string' && (type === 'Product' || type.endsWith('/Product')))
+  ) {
+    const productOffers = Array.isArray(record.offers) ? record.offers : [record.offers]
+    for (const offer of productOffers) {
+      if (typeof offer !== 'object' || offer === null) continue
+      const offerRecord = offer as Record<string, unknown>
+      const specification = offerRecord.priceSpecification
+      const specifiedPrice = typeof specification === 'object' && specification !== null
+        ? (specification as Record<string, unknown>).price
+        : undefined
+      const currency = offerRecord.priceCurrency
+        ?? (typeof specification === 'object' && specification !== null
+          ? (specification as Record<string, unknown>).priceCurrency
+          : undefined)
+      if (typeof currency === 'string' && currency.toUpperCase() !== 'INR') continue
+      const rawPrice = offerRecord.price ?? offerRecord.lowPrice ?? specifiedPrice
+      const price = typeof rawPrice === 'number'
+        ? rawPrice
+        : typeof rawPrice === 'string'
+          ? Number(rawPrice.replace(/[,\s₹]/g, ''))
+          : Number.NaN
+      const availability = String(offerRecord.availability ?? '').toLowerCase()
+      if (Number.isFinite(price) && price > 0) {
+        offers.push({
+          name: record.name,
+          price,
+          available: !availability.includes('outofstock') && !availability.includes('soldout'),
+        })
+      }
+    }
+  }
+
+  for (const child of Object.values(record)) extractProductOffers(child, offers)
+}
+
+function parseProductOffers(html: string) {
+  const offers: ProductOffer[] = []
+  const scripts = html.matchAll(
+    /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
+  )
+  for (const [, content] of scripts) {
+    try {
+      extractProductOffers(JSON.parse(content), offers)
+    } catch {
+      console.warn('Skipping malformed pharmacy product structured data.')
+    }
+  }
+  return offers
+}
+
+async function scrapePlatformPrice(platformId: typeof PLATFORMS[number]['id'], medicine: Medicine) {
+  const platform = PLATFORMS.find(({ id }) => id === platformId)
+  if (!platform) throw new Error(`Unknown pharmacy platform: ${platformId}`)
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 3500)
+  try {
+    const query = `${medicine.brand_name} ${medicine.salt_composition ?? ''}`.trim()
+    const response = await fetch(platform.searchUrl(query), {
+      headers: {
+        Accept: 'text/html,application/xhtml+xml',
+        'User-Agent': 'Mozilla/5.0 (compatible; DawaDaam/1.0)',
+      },
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`${platform.name} search returned HTTP ${response.status}`)
+    const offers = parseProductOffers(await response.text())
+      .filter((offer) => offer.available && offer.price <= medicine.mrp && matchesMedicine(offer.name, medicine))
+      .sort((a, b) => a.price - b.price)
+    return offers[0]?.price ?? null
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 function isMedicineRequest(value: unknown): value is MedicineRequest {
   if (typeof value !== 'object' || value === null || !('medicine_id' in value) || !('mrp' in value)) {
     return false
@@ -40,6 +155,45 @@ function isMedicineRequest(value: unknown): value is MedicineRequest {
     && typeof value.mrp === 'number'
     && Number.isFinite(value.mrp)
     && value.mrp > 0
+}
+
+async function resolveWithScrape(request: MedicineRequest): Promise<PharmacyPrice[]> {
+  const cachedPrices = await resolvePrices([request])
+  const cachedPlatforms = new Set(cachedPrices.map(({ platform_name }) => platform_name))
+  const missingPlatforms = PLATFORMS.filter(({ name }) => !cachedPlatforms.has(name))
+  if (missingPlatforms.length === 0) return cachedPrices
+
+  const { data: medicine, error } = await supabaseAdmin
+    .from('medicines')
+    .select('*')
+    .eq('id', request.medicine_id)
+    .maybeSingle()
+  if (error) throw error
+  if (!medicine) return cachedPrices
+
+  const results = await Promise.all(missingPlatforms.map(async (platform) => {
+    try {
+      const price = await scrapePlatformPrice(platform.id, medicine)
+      return price === null ? null : {
+        medicine_id: medicine.id,
+        platform_name: platform.name,
+        price,
+        updated_at: new Date().toISOString(),
+      }
+    } catch (error) {
+      console.warn(`Unable to refresh ${platform.name} for ${medicine.brand_name}:`, error)
+      return null
+    }
+  }))
+  const scrapedPrices = results.filter((price): price is PharmacyPrice => price !== null)
+  if (scrapedPrices.length === 0) return cachedPrices
+
+  const { error: saveError } = await supabaseAdmin
+    .from('pharmacy_prices')
+    .upsert(scrapedPrices, { onConflict: 'medicine_id,platform_name' })
+  if (saveError) throw saveError
+
+  return [...cachedPrices, ...scrapedPrices]
 }
 
 async function resolvePrices(requests: MedicineRequest[]): Promise<PharmacyPrice[]> {
@@ -63,7 +217,7 @@ async function resolvePrices(requests: MedicineRequest[]): Promise<PharmacyPrice
     if (!latestFreshPrices.has(key)) latestFreshPrices.set(key, row)
   }
 
-  return requests.flatMap(({ medicine_id }) => PLATFORMS.flatMap((platformName) => {
+  return requests.flatMap(({ medicine_id }) => PLATFORM_NAMES.flatMap((platformName) => {
     const price = latestFreshPrices.get(`${medicine_id}:${platformName}`)
     return price ? [price] : []
   }))
@@ -91,7 +245,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    return NextResponse.json(await resolvePrices([{ medicine_id: medicineId, mrp }]), {
+    return NextResponse.json(await resolveWithScrape({ medicine_id: medicineId, mrp }), {
       headers: EDGE_CACHE_HEADERS,
     })
   } catch (error) {
@@ -127,7 +281,11 @@ export async function POST(request: Request) {
   ).values()]
 
   try {
-    return NextResponse.json(await resolvePrices(uniqueRequests))
+    return NextResponse.json(
+      uniqueRequests.length === 1
+        ? await resolveWithScrape(uniqueRequests[0])
+        : await resolvePrices(uniqueRequests),
+    )
   } catch (error) {
     return handleFailure(error)
   }

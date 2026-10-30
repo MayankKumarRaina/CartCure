@@ -17,12 +17,19 @@ import {
   TrendingDown,
   X,
 } from 'lucide-react'
-import { CATEGORIES, MEDICINES, PLATFORMS, type Category, type Medicine, type PharmacyPrice } from '@/lib/data'
+import {
+  CATEGORIES,
+  MEDICINES,
+  PLATFORMS,
+  type Category,
+  type MedicinePrices,
+  type MedicineSearchResult,
+  type PriceStoreId,
+} from '@/lib/data'
 import { useCart } from '@/components/cart-provider'
 import LoadingResearcher from '@/components/loading-researcher'
 import { MedicineCard } from '@/components/medicine-card'
 import { mapMedicine } from '@/lib/medicines'
-import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 
 const MedicineScannerModal = lazy(() => import('@/components/medicine-scanner-modal').then(
@@ -141,7 +148,23 @@ function cacheMedicines(category: Category | null, medicines: CatalogMedicine[])
   }
 }
 
-function isMedicineRows(value: unknown): value is Medicine[] {
+function isNonNegativeNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+}
+
+function isMedicinePrices(value: unknown): value is MedicinePrices {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Record<string, unknown>
+  return ['tata1mg', 'pharmeasy', 'netmeds', 'apollo', 'truemeds'].every((id) => (
+    isNonNegativeNumber(record[id])
+  )) && ['healthkart', 'truebasics'].every((id) => (
+    record[id] === undefined
+    || record[id] === null
+    || (typeof record[id] === 'number' && Number.isFinite(record[id]))
+  ))
+}
+
+function isMedicineRows(value: unknown): value is MedicineSearchResult[] {
   return Array.isArray(value) && value.every((row: unknown) => (
     typeof row === 'object'
     && row !== null
@@ -163,10 +186,36 @@ function isMedicineRows(value: unknown): value is Medicine[] {
     && typeof row.mrp === 'number'
     && 'is_rx_required' in row
     && typeof row.is_rx_required === 'boolean'
+    && 'resolvedPrices' in row
+    && isMedicinePrices(row.resolvedPrices)
+    && 'pharmacyPrices' in row
+    && Array.isArray(row.pharmacyPrices)
+    && row.pharmacyPrices.every((price: unknown) => (
+      typeof price === 'object'
+      && price !== null
+      && 'medicine_id' in price
+      && typeof price.medicine_id === 'string'
+      && 'platform_name' in price
+      && typeof price.platform_name === 'string'
+      && 'price' in price
+      && typeof price.price === 'number'
+      && 'updated_at' in price
+      && typeof price.updated_at === 'string'
+    ))
+    && 'livePricePlatforms' in row
+    && Array.isArray(row.livePricePlatforms)
+    && row.livePricePlatforms.every((id) => PLATFORMS.some((platform) => platform.id === id))
+    && 'estimatedPricePlatforms' in row
+    && Array.isArray(row.estimatedPricePlatforms)
+    && row.estimatedPricePlatforms.every((id): id is PriceStoreId => (
+      PLATFORMS.some((platform) => platform.id === id)
+      || id === 'healthkart'
+      || id === 'truebasics'
+    ))
   ))
 }
 
-async function fetchMedicineRows(params: URLSearchParams, signal?: AbortSignal): Promise<Medicine[]> {
+async function fetchMedicineRows(params: URLSearchParams, signal?: AbortSignal): Promise<MedicineSearchResult[]> {
   const response = await fetch(`/api/medicines?${params.toString()}`, { signal })
   if (!response.ok) throw new Error(`Medicine search request failed with status ${response.status}`)
   const result: unknown = await response.json()
@@ -174,25 +223,8 @@ async function fetchMedicineRows(params: URLSearchParams, signal?: AbortSignal):
   return result
 }
 
-async function mapMedicinesWithCachedPrices(rows: Medicine[]): Promise<CatalogMedicine[]> {
-  if (rows.length === 0) return []
-  const prices = await fetchWithRetry(async () => {
-    const { data, error } = await supabase
-      .from('pharmacy_prices')
-      .select('medicine_id, platform_name, price, updated_at')
-      .in('medicine_id', rows.map(({ id }) => id))
-    if (error) throw error
-    return data
-  })
-
-  const pricesByMedicine = new Map<string, PharmacyPrice[]>()
-  for (const price of prices) {
-    const medicinePrices = pricesByMedicine.get(price.medicine_id) ?? []
-    medicinePrices.push(price)
-    pricesByMedicine.set(price.medicine_id, medicinePrices)
-  }
-
-  return rows.map((row) => mapMedicine(row, pricesByMedicine.get(row.id) ?? []))
+function mapMedicinesWithCachedPrices(rows: MedicineSearchResult[]): CatalogMedicine[] {
+  return rows.map((row) => mapMedicine(row))
 }
 
 export function MedicineSearch() {
@@ -204,7 +236,7 @@ export function MedicineSearch() {
     recordMedicineSearch,
   } = useCart()
   const [query, setQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<Medicine[]>([])
+  const [searchResults, setSearchResults] = useState<MedicineSearchResult[]>([])
   const [submittedSearch, setSubmittedSearch] = useState<string | null>(null)
   const [browseMedicines, setBrowseMedicines] = useState<CatalogMedicine[]>([])
   const [selectedMedicine, setSelectedMedicine] = useState<CatalogMedicine | null>(null)
@@ -375,7 +407,7 @@ export function MedicineSearch() {
       }), controller.signal), 3, 900, controller.signal)
       if (currentSearch !== searchRequestId.current) return
 
-      const uniqueRows = new Map<string, Medicine>()
+      const uniqueRows = new Map<string, MedicineSearchResult>()
       for (const row of rows) uniqueRows.set(row.id, row)
       setSearchResults([...uniqueRows.values()].slice(0, 8))
       setError(null)
@@ -642,9 +674,9 @@ export function MedicineSearch() {
     }
   }, [appendBrowseMedicines, loadBrowse, loadNextLivePricePage, submitSearch])
 
-  async function selectMedicine(row: Medicine) {
+  async function selectMedicine(row: MedicineSearchResult) {
     const currentOperation = ++operationId.current
-    const fallbackMedicine = mapMedicine(row, [])
+    const fallbackMedicine = mapMedicine(row)
     recordMedicineSearch(row.id)
     setQuery('')
     setSearchResults([])
@@ -662,8 +694,10 @@ export function MedicineSearch() {
       if (currentOperation !== operationId.current) return
       setSelectedMedicine(medicine)
       registerMedicines([medicine])
-      await resolveLivePrices(medicine)
-      if (currentOperation === operationId.current) setIsDataLoaded(true)
+      setIsDataLoaded(true)
+      void resolveLivePrices(medicine).catch((priceError: unknown) => {
+        console.error(`Unable to refresh selected medicine ${medicine.id}:`, priceError)
+      })
     } catch {
       if (currentOperation === operationId.current) {
         setError('We could not refresh this medicine’s prices. You can retry by adding it to your basket.')
@@ -700,7 +734,11 @@ export function MedicineSearch() {
     const lowestPrice = (medicine: CatalogMedicine) => {
       const prices = PLATFORMS
         .filter(({ id }) => medicine.prices[id] > 0
-          && (medicine.livePricePlatforms === undefined || medicine.livePricePlatforms.includes(id)))
+          && (
+            medicine.estimatedPricePlatforms?.includes(id)
+            || medicine.livePricePlatforms === undefined
+            || medicine.livePricePlatforms.includes(id)
+          ))
         .map(({ id }) => medicine.prices[id])
       return prices.length > 0 ? Math.min(...prices) : Number.POSITIVE_INFINITY
     }
@@ -952,8 +990,11 @@ export function MedicineSearch() {
                     className="flex w-full flex-col gap-1 rounded-lg px-3 py-2.5 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
                   >
                     <span className="text-sm font-medium">{medicine.brand_name}</span>
-                    <span className="line-clamp-1 text-xs text-muted-foreground">
-                      {medicine.salt_composition || 'Composition not listed'} · MRP ₹{medicine.mrp}
+                    <span className="flex w-full min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                      <span className="min-w-0 flex-1 truncate">
+                        {medicine.salt_composition || 'Composition not listed'}
+                      </span>
+                      <span className="shrink-0 whitespace-nowrap">MRP ₹{medicine.mrp}</span>
                     </span>
                   </button>
                 </li>
@@ -973,14 +1014,14 @@ export function MedicineSearch() {
               setOpenMenu(openMenu === 'category' ? null : 'category')
             }}
             className={cn(
-              'flex h-11 min-w-0 items-center gap-2 rounded-full border px-3 text-left shadow-sm transition-colors',
+              'flex h-11 min-w-0 items-center gap-2 rounded-full border px-2.5 py-2 text-left text-[11px] shadow-sm transition-colors sm:text-xs',
               activeCategory
                 ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
                 : 'border-slate-200 bg-white text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100',
             )}
           >
             <SlidersHorizontal className="size-4 shrink-0 text-emerald-500 dark:text-emerald-400" aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate text-xs font-medium">{activeCategory ?? 'All medicines'}</span>
+            <span className="min-w-0 flex-1 truncate font-medium">{activeCategory ?? 'All medicines'}</span>
             {activeCategory && <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />}
             <ChevronDown
               className={cn('size-4 shrink-0 text-slate-500 transition-transform dark:text-slate-300', openMenu === 'category' && 'rotate-180')}
@@ -993,11 +1034,16 @@ export function MedicineSearch() {
             aria-label={`Sort: ${sortOptions.find(({ value }) => value === sortMode)?.label ?? 'Lowest price'}`}
             aria-expanded={openMenu === 'sort'}
             onClick={() => setOpenMenu(openMenu === 'sort' ? null : 'sort')}
-            className="flex h-11 min-w-0 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-left text-slate-800 shadow-sm transition-colors dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            className="flex h-11 min-w-0 items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-2 text-left text-[11px] text-slate-800 shadow-sm transition-colors sm:text-xs dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           >
             <ArrowUpDown className="size-4 shrink-0 text-emerald-500 dark:text-emerald-400" aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate text-xs font-medium">
-              Sort: {sortOptions.find(({ value }) => value === sortMode)?.label ?? 'Lowest price'}
+            <span className="min-w-0 flex-1 truncate font-medium">
+              <span className="max-[379px]:hidden">
+                Sort: {sortOptions.find(({ value }) => value === sortMode)?.label ?? 'Lowest price'}
+              </span>
+              <span className="min-[380px]:hidden">
+                {sortOptions.find(({ value }) => value === sortMode)?.label ?? 'Lowest price'}
+              </span>
             </span>
             <ChevronDown
               className={cn('size-4 shrink-0 text-slate-500 transition-transform dark:text-slate-300', openMenu === 'sort' && 'rotate-180')}

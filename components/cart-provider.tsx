@@ -80,12 +80,23 @@ export function CartProvider({ children }: { children: ReactNode }) {
       const currentById = new Map(current.map((medicine) => [medicine.id, medicine]))
       for (const medicine of newMedicines) {
         const existing = currentById.get(medicine.id)
+        const estimatedPricePlatforms = new Set([
+          ...(medicine.estimatedPricePlatforms ?? []),
+          ...(existing?.estimatedPricePlatforms ?? []),
+        ])
+        for (const platformId of existing?.livePricePlatforms ?? []) {
+          estimatedPricePlatforms.delete(platformId)
+        }
         currentById.set(medicine.id, existing ? {
           ...medicine,
           prices: existing.prices,
           livePricePlatforms: existing.livePricePlatforms,
+          estimatedPricePlatforms: [...estimatedPricePlatforms],
           pharmacyPrices: existing.pharmacyPrices,
-        } : medicine)
+        } : {
+          ...medicine,
+          estimatedPricePlatforms: [...estimatedPricePlatforms],
+        })
       }
       return [...currentById.values()]
     })
@@ -135,11 +146,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
             const platformId = platformIdFromName(price.platform_name)
             if (platformId) pharmacyPricesByPlatform.set(platformId, price)
           }
+          const estimatedPricePlatforms = new Set(entry.estimatedPricePlatforms ?? [])
           for (const price of validPrices) {
             const platformId = platformIdFromName(price.platform_name)
             if (platformId) {
               pharmacyPricesByPlatform.set(platformId, price)
               livePricePlatforms.add(platformId)
+              estimatedPricePlatforms.delete(platformId)
             }
           }
 
@@ -147,6 +160,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
             ...entry,
             prices: { ...entry.prices, ...Object.fromEntries(pricesByPlatform) },
             livePricePlatforms: [...livePricePlatforms],
+            estimatedPricePlatforms: [...estimatedPricePlatforms],
             pharmacyPrices: [...pharmacyPricesByPlatform.values()],
           }
         }))
@@ -227,11 +241,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
           const platformId = platformIdFromName(price.platform_name)
           if (platformId) pharmacyPricesByPlatform.set(platformId, price)
         }
+        const estimatedPricePlatforms = new Set(medicine.estimatedPricePlatforms ?? [])
         for (const price of livePrices) {
           const platformId = platformIdFromName(price.platform_name)
           if (!platformId) continue
           prices[platformId] = price.price
           livePricePlatforms.add(platformId)
+          estimatedPricePlatforms.delete(platformId)
           pharmacyPricesByPlatform.set(platformId, price)
         }
 
@@ -239,6 +255,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           ...medicine,
           prices,
           livePricePlatforms: [...livePricePlatforms],
+          estimatedPricePlatforms: [...estimatedPricePlatforms],
           pharmacyPrices: [...pharmacyPricesByPlatform.values()],
         }
       }))
