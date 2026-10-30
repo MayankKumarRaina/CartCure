@@ -1,9 +1,31 @@
-const supabaseUrl = process.env.SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const serviceRoleKey =
+  process.env.SUPABASE_SERVICE_KEY
+  || process.env.SUPABASE_SERVICE_ROLE_KEY
+  || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 const maxMedicines = 25
 
+function resolveSupabaseUrl(key) {
+  if (process.env.SUPABASE_URL) return process.env.SUPABASE_URL
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL) return process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (key && key.includes('.')) {
+    let payload
+    try {
+      payload = JSON.parse(Buffer.from(key.split('.')[1], 'base64url').toString('utf8'))
+    } catch (error) {
+      throw new Error('Unable to decode the Supabase key JWT payload to infer SUPABASE_URL.', { cause: error })
+    }
+    if (typeof payload?.ref === 'string' && payload.ref) return `https://${payload.ref}.supabase.co`
+  }
+  return ''
+}
+
+const supabaseUrl = resolveSupabaseUrl(serviceRoleKey)
+
 if (!supabaseUrl || !serviceRoleKey) {
-  throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.')
+  throw new Error(
+    'A Supabase URL and key are required. Set SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) '
+    + 'and SUPABASE_SERVICE_KEY (or a supported fallback key).',
+  )
 }
 
 const platforms = [
@@ -49,6 +71,12 @@ async function supabaseRequest(path, options = {}) {
     throw new Error(`Supabase request failed (${response.status}): ${await response.text()}`)
   }
   return response.status === 204 ? null : response.json()
+}
+
+if (process.argv.includes('--ping-only')) {
+  await supabaseRequest('medicines?select=id&limit=1')
+  console.log('Supabase keep-alive ping succeeded')
+  process.exit(0)
 }
 
 function tokens(value) {

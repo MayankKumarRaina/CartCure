@@ -8,6 +8,12 @@ on:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY || secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      APP_URL: ${{ secrets.APP_URL || 'https://dawadaam.in' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -16,7 +22,4 @@ jobs:
         with:
           node-version: 22
       - name: Refresh top medicine prices
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL || vars.SUPABASE_URL || secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/refresh-top-medicines.mjs
