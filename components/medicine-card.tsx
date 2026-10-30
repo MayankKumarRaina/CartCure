@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Check, ChevronDown, FileText, Minus, Plus, ShoppingCart } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronDown, FileText, Minus, Plus, ShoppingCart, Store } from 'lucide-react'
 import {
   PLATFORMS,
   resolveMedicinePrices,
@@ -229,6 +229,7 @@ export function MedicineCard({ medicine: inputMedicine }: { medicine: CatalogMed
       || Number(b.hasAffiliate) - Number(a.hasAffiliate)
       || a.price - b.price)
     .slice(0, 3)
+  const remainingStoreCount = Math.max(0, totalStoreCount - (winner ? 1 : 0) - runnerUps.length)
   const sortedComparisonStores = [...comparisonStores].sort((a, b) => {
     const group = (store: ComparisonStore) => (
       isAvailablePrice(store) ? (store.hasAffiliate ? 0 : 1) : 2
@@ -384,7 +385,7 @@ export function MedicineCard({ medicine: inputMedicine }: { medicine: CatalogMed
         </div>
       </div>
 
-      <div className="box-border mt-3 flex w-full min-w-0 max-w-full items-stretch gap-2 overflow-hidden">
+      <div className="box-border mt-3 flex w-full min-w-0 max-w-full items-stretch overflow-hidden">
         {winner ? (
           <a
             href={winner.href}
@@ -402,26 +403,32 @@ export function MedicineCard({ medicine: inputMedicine }: { medicine: CatalogMed
               })
             }}
             aria-label={`View ${medicine.name} at ${winner.name} for ${winner.isEstimate ? `an estimated ${formatINR(winner.price)}` : formatINR(winner.price)}`}
-            className="flex min-w-0 flex-1 items-center justify-start gap-2.5 rounded-xl border border-emerald-500/40 bg-emerald-50/70 px-3 py-2 transition-colors hover:bg-emerald-100 dark:bg-emerald-950/35 dark:hover:bg-emerald-950/70"
+            className="flex w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-emerald-500/40 bg-emerald-50/70 px-3.5 py-2.5 transition-colors hover:bg-emerald-100 dark:bg-emerald-950/35 dark:hover:bg-emerald-950/70"
           >
-            <span className="min-w-0">
-              <span className="flex items-center gap-1">
-                <span className="shrink-0 whitespace-nowrap text-[17px] font-extrabold leading-none text-emerald-600 dark:text-emerald-400 sm:text-lg">
-                  {formatINR(winner.price)}
+            <span className="flex min-w-0 items-center gap-3">
+              <span className="min-w-0 shrink-0">
+                <span className="flex items-center gap-1">
+                  <span className="shrink-0 whitespace-nowrap text-[17px] font-extrabold leading-none text-emerald-600 dark:text-emerald-400 sm:text-lg">
+                    {formatINR(winner.price)}
+                  </span>
+                  <span className="shrink-0 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8.5px] font-extrabold uppercase tracking-wider text-slate-950">
+                    Lowest
+                  </span>
                 </span>
-                <span className="shrink-0 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8.5px] font-extrabold uppercase tracking-wider text-slate-950">
-                  {winner.isEstimate ? 'Estimate' : 'Lowest'}
+                <span className="mt-1 block whitespace-nowrap text-[10.5px] font-medium text-emerald-700/90 dark:text-emerald-400/90">
+                  {winner.isEstimate
+                    ? 'MRP-based estimate'
+                    : `Save ${formatINR(Math.max(0, medicine.mrp - winner.price))} vs MRP`}
                 </span>
               </span>
-              <span className="mt-1 block shrink-0 whitespace-nowrap text-[10.5px] font-medium text-emerald-700/90 dark:text-emerald-400/90">
-                {winner.isEstimate
-                  ? 'MRP-based estimate'
-                  : `Save ${formatINR(Math.max(0, medicine.mrp - winner.price))} vs MRP`}
+              <span className="h-7 w-px shrink-0 bg-emerald-500/30" aria-hidden="true" />
+              <span className="min-w-0 truncate text-xs font-bold text-slate-800 dark:text-slate-100 sm:text-sm">
+                {winner.name}
               </span>
             </span>
-            <span className="mx-1 h-7 w-px shrink-0 bg-emerald-500/30" aria-hidden="true" />
-            <span className="shrink-0 whitespace-nowrap text-xs font-semibold text-slate-700 dark:text-slate-200">
-              {winner.shortName}
+            <span className="flex shrink-0 items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+              View deal
+              <ArrowUpRight className="size-3.5" aria-hidden="true" />
             </span>
           </a>
         ) : (
@@ -442,15 +449,6 @@ export function MedicineCard({ medicine: inputMedicine }: { medicine: CatalogMed
             </span>
           </button>
         )}
-        <button
-          type="button"
-          onClick={toggleComparison}
-          aria-expanded={isExpanded}
-          className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-slate-100 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-200 dark:border-slate-700/80 dark:bg-slate-900/80 dark:text-teal-400 dark:hover:bg-slate-900"
-        >
-          Compare {totalStoreCount}
-          <ChevronDown className={cn('size-3.5 transition-transform', isExpanded && 'rotate-180')} aria-hidden="true" />
-        </button>
       </div>
 
       <div className="mt-2 grid w-full min-w-0 grid-cols-3 gap-1.5">
@@ -492,10 +490,16 @@ export function MedicineCard({ medicine: inputMedicine }: { medicine: CatalogMed
           type="button"
           onClick={toggleComparison}
           aria-expanded={isExpanded}
-          className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-200 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-900"
+          className={cn(
+            'flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-semibold transition-all sm:text-xs',
+            isExpanded
+              ? 'border border-emerald-500/50 bg-emerald-500/15 text-emerald-800 dark:text-emerald-300'
+              : 'border border-teal-500/35 bg-teal-500/10 text-teal-800 shadow-xs hover:bg-teal-500/15 dark:border-teal-500/30 dark:bg-slate-900/90 dark:text-teal-300 dark:hover:bg-slate-800/90',
+          )}
         >
-          +{Math.max(0, totalStoreCount - (winner ? 1 : 0) - runnerUps.length)} more stores
-          <ChevronDown className={cn('size-3.5 transition-transform', isExpanded && 'rotate-180')} aria-hidden="true" />
+          <Store className="size-3.5 shrink-0 text-teal-500" aria-hidden="true" />
+          {isExpanded ? 'Hide all 7 stores' : `Compare +${remainingStoreCount} stores`}
+          <ChevronDown className={cn('size-3.5 transition-transform duration-200', isExpanded && 'rotate-180')} aria-hidden="true" />
         </button>
         <AnimatePresence mode="popLayout" initial={false}>
           {qty === 0 || justAdded ? (
@@ -509,7 +513,7 @@ export function MedicineCard({ medicine: inputMedicine }: { medicine: CatalogMed
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ type: 'spring', stiffness: 500, damping: 30 }}
               className={cn(
-                'inline-flex min-w-[110px] flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 shadow-sm transition-colors hover:bg-emerald-400 sm:flex-initial',
+                'inline-flex min-w-[110px] flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 shadow-sm transition-colors hover:bg-emerald-400',
                 justAdded && 'bg-emerald-500',
               )}
             >
@@ -523,7 +527,7 @@ export function MedicineCard({ medicine: inputMedicine }: { medicine: CatalogMed
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-              className="flex h-full min-w-[110px] flex-1 items-center justify-center rounded-xl border border-emerald-500/40 bg-slate-50 sm:flex-initial dark:bg-slate-900"
+              className="flex h-full min-w-[110px] flex-1 items-center justify-center rounded-xl border border-emerald-500/40 bg-slate-50 dark:bg-slate-900"
             >
               <button
                 type="button"
