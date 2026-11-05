@@ -31,7 +31,7 @@ async function resolveRows(rows: Medicine[]): Promise<MedicineSearchResult[]> {
 
   const { data: priceRows, error } = await supabase
     .from('pharmacy_prices')
-    .select('medicine_id, platform_name, price, updated_at')
+    .select('medicine_id, platform_name, price, in_stock, updated_at')
     .in('medicine_id', rows.map(({ id }) => id))
     .order('updated_at', { ascending: false })
   if (error) throw error
@@ -52,6 +52,7 @@ async function resolveRows(rows: Medicine[]): Promise<MedicineSearchResult[]> {
       resolvedPrices: resolved.prices,
       livePricePlatforms: resolved.livePricePlatforms ?? [],
       estimatedPricePlatforms: resolved.estimatedPricePlatforms ?? [],
+      productUrls: resolved.productUrls,
     }
   })
 }
@@ -97,7 +98,7 @@ export async function GET(request: Request) {
     if (query) {
       medicineQuery = medicineQuery.or(medicineSearchFilter(query))
     } else if (categoryValue) {
-      medicineQuery = medicineQuery.ilike('category', categoryValue)
+      medicineQuery = medicineQuery.eq('category', categoryValue)
     } else {
       medicineQuery = medicineQuery.in('category', [...CATEGORIES])
     }

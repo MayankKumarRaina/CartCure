@@ -9,6 +9,7 @@ import {
   type CatalogMedicine,
   type Platform,
   type PlatformId,
+  type PriceStoreId,
   type WellnessPartnerId,
 } from '@/lib/data'
 import { formatINR } from '@/lib/pricing'
@@ -161,8 +162,14 @@ type ComparisonStore = {
   hasAffiliate: boolean
 }
 
+function productUrlFor(medicine: CatalogMedicine, storeId: PriceStoreId) {
+  const url = medicine.productUrls?.[storeId]
+  return url && /^https?:\/\//i.test(url) ? url : undefined
+}
+
 function pharmacyUrl(platform: Platform, medicine: CatalogMedicine) {
-  return getAffiliateUrl(platform.id, medicine.productUrls?.[platform.id] ?? platform.searchUrl(medicine.name))
+  return productUrlFor(medicine, platform.id)
+    ?? getAffiliateUrl(platform.id, platform.searchUrl(medicine.name))
 }
 
 export function MedicineCard({ medicine: inputMedicine }: { medicine: CatalogMedicine }) {
@@ -208,7 +215,8 @@ export function MedicineCard({ medicine: inputMedicine }: { medicine: CatalogMed
         brandStyle: WELLNESS_BRAND_STYLES[partner.id],
         price: hasCheckedPrice ? wellnessPrices[partner.id] ?? null : medicine.prices[partner.id] ?? null,
         isEstimate: !hasCheckedPrice && (medicine.estimatedPricePlatforms?.includes(partner.id) ?? false),
-        href: getAffiliateUrl(partner.id, `https://${partner.id}.com`),
+        href: productUrlFor(medicine, partner.id)
+          ?? getAffiliateUrl(partner.id, `https://${partner.id}.com`),
         hasAffiliate: hasAffiliateLink(partner.id),
       }
     }),
@@ -276,6 +284,10 @@ export function MedicineCard({ medicine: inputMedicine }: { medicine: CatalogMed
   async function checkWellnessPrices() {
     if (wellnessCheckAttempted.current || isCheckingWellnessPrices) return
     wellnessCheckAttempted.current = true
+    if (medicine.rxRequired) {
+      setWellnessPrices({ healthkart: null, truebasics: null })
+      return
+    }
     setIsCheckingWellnessPrices(true)
     setWellnessPriceErrors(new Set())
     try {

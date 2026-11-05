@@ -294,7 +294,9 @@ export function CartDrawer() {
                 const standardUrl = productUrl && /^https?:\/\//i.test(productUrl)
                   ? productUrl
                   : pharmacySearchUrl(activeQuote.platform.id, primaryMedicine.name)
-                const targetUrl = getAffiliateUrl(activeQuote.platform.id, standardUrl)
+                const targetUrl = productUrl && /^https?:\/\//i.test(productUrl)
+                  ? productUrl
+                  : getAffiliateUrl(activeQuote.platform.id, standardUrl)
 
                 trackAndOpenStore({
                   platformId: activeQuote.platform.id,

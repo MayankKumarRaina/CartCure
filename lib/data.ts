@@ -1,7 +1,7 @@
 export type PlatformId = 'tata1mg' | 'pharmeasy' | 'netmeds' | 'apollo' | 'truemeds'
 export type WellnessPartnerId = 'healthkart' | 'truebasics'
 export type PriceStoreId = PlatformId | WellnessPartnerId
-export type MedicinePrices = Record<PlatformId, number> & Partial<Record<WellnessPartnerId, number | null>>
+export type MedicinePrices = Record<PlatformId, number> & Record<WellnessPartnerId, number | null>
 
 export const CATEGORIES = [
   'Anti Diabetic',
@@ -17,7 +17,6 @@ export const CATEGORIES = [
   'Neuro Cns',
   'Ophthal',
   'Ophthal Otologicals',
-  'Others',
   'Otologicals',
   'Pain Analgesics',
   'Respiratory',
@@ -25,7 +24,8 @@ export const CATEGORIES = [
   'Stomatologicals',
   'Urology',
   'Vaccines',
-  'Vitamins Minerals Nutrients',
+  'Vitamins & Nutrition',
+  'Other',
 ] as const
 
 export type Category = (typeof CATEGORIES)[number]
@@ -59,6 +59,15 @@ export type Medicine = {
   search_count: number
   mrp: number
   is_rx_required: boolean
+  price_1mg?: number | null
+  price_pharmeasy?: number | null
+  price_netmeds?: number | null
+  price_apollo?: number | null
+  price_truemeds?: number | null
+  price_healthkart?: number | null
+  price_truebasics?: number | null
+  store_urls?: Partial<Record<PriceStoreId | '1mg', string>> | null
+  in_stock?: boolean | null
 }
 
 export type CatalogMedicine = {
@@ -74,13 +83,15 @@ export type CatalogMedicine = {
   livePricePlatforms?: PlatformId[]
   estimatedPricePlatforms?: PriceStoreId[]
   pharmacyPrices?: PharmacyPrice[]
-  productUrls?: Partial<Record<PlatformId, string>>
+  productUrls?: Partial<Record<PriceStoreId, string>>
+  databasePrices?: Partial<Record<PlatformId, number | null>>
 }
 
 export type PharmacyPrice = {
   medicine_id: string
   platform_name: string
   price: number
+  in_stock?: boolean | null
   updated_at: string
 }
 
@@ -125,6 +136,13 @@ export function resolveMedicinePrices(medicine: CatalogMedicine): CatalogMedicin
         continue
       }
     }
+    if (
+      medicine.databasePrices
+      && medicine.databasePrices[platformId] !== null
+      && medicine.databasePrices[platformId] !== undefined
+    ) {
+      continue
+    }
 
     let price = estimatedPrice(
       medicine.mrp,
@@ -144,7 +162,7 @@ export function resolveMedicinePrices(medicine: CatalogMedicine): CatalogMedicin
 
   const details = `${medicine.name} ${medicine.salt} ${medicine.categories.join(' ')}`.toLowerCase()
   const isWellness = /vitamin|calcium|calcitriol|omega|protein|zinc|d3|b12|iron|multivitamin|supplement/.test(details)
-  if (isWellness) {
+  if (isWellness && !medicine.rxRequired) {
     for (const partnerId of ['healthkart', 'truebasics'] as const) {
       const currentPrice = prices[partnerId]
       if (typeof currentPrice === 'number' && Number.isFinite(currentPrice) && currentPrice > 0) {

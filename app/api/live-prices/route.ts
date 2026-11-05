@@ -22,12 +22,12 @@ const EDGE_CACHE_HEADERS = {
   'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
   'CDN-Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
 }
-
 type MedicineRequest = { medicine_id: string; mrp: number }
 type PharmacyPrice = {
   medicine_id: string
   platform_name: string
   price: number
+  in_stock?: boolean | null
   updated_at: string
 }
 
@@ -50,13 +50,16 @@ function normalizedTokens(value: string) {
 
 function matchesMedicine(productName: string, medicine: Medicine) {
   const productTokens = new Set(normalizedTokens(productName))
-  const medicineTokens = [...new Set([
-    ...normalizedTokens(medicine.brand_name),
-    ...normalizedTokens(medicine.salt_composition ?? ''),
-  ])]
-  if (medicineTokens.length === 0) return false
-  const matchingTokens = medicineTokens.filter((token) => productTokens.has(token)).length
-  return matchingTokens >= Math.min(2, medicineTokens.length)
+  const brandTokens = [...new Set(normalizedTokens(medicine.brand_name))]
+  const saltTokens = [...new Set(normalizedTokens(medicine.salt_composition ?? ''))]
+  const brandMatches = brandTokens.filter((token) => productTokens.has(token)).length
+  const saltMatches = saltTokens.filter((token) => productTokens.has(token)).length
+  if (brandTokens.length === 0 || brandMatches === 0) return false
+  return brandTokens.length === 1 || brandMatches + saltMatches >= Math.min(2, brandTokens.length + saltTokens.length)
+}
+
+function isValidPrice(price: number, mrp: number) {
+  return Number.isFinite(price) && price >= mrp * 0.4 && price <= mrp * 1.4
 }
 
 function extractProductOffers(value: unknown, offers: ProductOffer[]) {
@@ -120,26 +123,80 @@ function parseProductOffers(html: string) {
   return offers
 }
 
+function parsePharmEasyOffers(body: string, medicine: Medicine): ProductOffer[] {
+  const payload: unknown = JSON.parse(body)
+  if (typeof payload !== 'object' || payload === null || !('data' in payload)) return []
+  const data = payload.data
+  if (typeof data !== 'object' || data === null || !('products' in data) || !Array.isArray(data.products)) {
+    return []
+  }
+
+  return data.products.flatMap((entry): ProductOffer[] => {
+    if (typeof entry !== 'object' || entry === null) return []
+    const product = entry as Record<string, unknown>
+    const availability = product.productAvailabilityFlags
+    if (
+      typeof product.name !== 'string'
+      || typeof availability !== 'object'
+      || availability === null
+      || !('isAvailable' in availability)
+      || availability.isAvailable !== true
+      || !matchesMedicine(product.name, medicine)
+    ) return []
+    return [{
+      name: product.name,
+      price: Number(product.salePriceDecimal ?? product.assuredDiscountPrice),
+      available: true,
+    }]
+  })
+}
+
+function inlinePriceUpdate(platformId: typeof PLATFORMS[number]['id'], price: number): Partial<Medicine> {
+  switch (platformId) {
+    case 'tata1mg':
+      return { price_1mg: price }
+    case 'pharmeasy':
+      return { price_pharmeasy: price }
+    case 'netmeds':
+      return { price_netmeds: price }
+    case 'apollo':
+      return { price_apollo: price }
+    case 'truemeds':
+      return { price_truemeds: price }
+  }
+}
+
 async function scrapePlatformPrice(platformId: typeof PLATFORMS[number]['id'], medicine: Medicine) {
   const platform = PLATFORMS.find(({ id }) => id === platformId)
   if (!platform) throw new Error(`Unknown pharmacy platform: ${platformId}`)
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 3500)
+  const timeout = setTimeout(() => controller.abort(), 10000)
   try {
     const query = `${medicine.brand_name} ${medicine.salt_composition ?? ''}`.trim()
-    const response = await fetch(platform.searchUrl(query), {
+    const searchUrl = platformId === 'pharmeasy'
+      ? `https://pharmeasy.in/api/search/search/?q=${encodeURIComponent(query)}`
+      : platform.searchUrl(query)
+    const response = await fetch(searchUrl, {
       headers: {
-        Accept: 'text/html,application/xhtml+xml',
-        'User-Agent': 'Mozilla/5.0 (compatible; DawaDaam/1.0)',
+        Accept: platformId === 'pharmeasy'
+          ? 'application/json, text/plain, */*'
+          : 'text/html,application/xhtml+xml',
+        ...(platformId === 'pharmeasy'
+          ? { Origin: 'https://pharmeasy.in', Referer: 'https://pharmeasy.in/' }
+          : {}),
       },
       signal: controller.signal,
     })
     if (!response.ok) throw new Error(`${platform.name} search returned HTTP ${response.status}`)
-    const offers = parseProductOffers(await response.text())
-      .filter((offer) => offer.available && offer.price <= medicine.mrp && matchesMedicine(offer.name, medicine))
+    const body = await response.text()
+    const offers = platformId === 'pharmeasy'
+      ? parsePharmEasyOffers(body, medicine)
+      : parseProductOffers(body)
+    const matchingOffers = offers
+      .filter((offer) => offer.available && isValidPrice(offer.price, medicine.mrp) && matchesMedicine(offer.name, medicine))
       .sort((a, b) => a.price - b.price)
-    return offers[0]?.price ?? null
+    return matchingOffers[0]?.price ?? null
   } finally {
     clearTimeout(timeout)
   }
@@ -171,13 +228,14 @@ async function resolveWithScrape(request: MedicineRequest): Promise<PharmacyPric
   if (error) throw error
   if (!medicine) return cachedPrices
 
-  const results = await Promise.all(missingPlatforms.map(async (platform) => {
+  const results: (PharmacyPrice | null)[] = await Promise.all(missingPlatforms.map(async (platform) => {
     try {
       const price = await scrapePlatformPrice(platform.id, medicine)
       return price === null ? null : {
         medicine_id: medicine.id,
         platform_name: platform.name,
         price,
+        in_stock: true,
         updated_at: new Date().toISOString(),
       }
     } catch (error) {
@@ -188,10 +246,22 @@ async function resolveWithScrape(request: MedicineRequest): Promise<PharmacyPric
   const scrapedPrices = results.filter((price): price is PharmacyPrice => price !== null)
   if (scrapedPrices.length === 0) return cachedPrices
 
-  const { error: saveError } = await supabaseAdmin
-    .from('pharmacy_prices')
-    .upsert(scrapedPrices, { onConflict: 'medicine_id,platform_name' })
-  if (saveError) throw saveError
+  const writes = await Promise.all([
+    supabaseAdmin
+      .from('pharmacy_prices')
+      .upsert(scrapedPrices, { onConflict: 'medicine_id,platform_name' }),
+    ...scrapedPrices.map((price) => {
+      const platform = PLATFORMS.find(({ name }) => name === price.platform_name)
+      if (!platform) throw new Error(`Unknown pharmacy platform: ${price.platform_name}`)
+      return supabaseAdmin
+        .from('medicines')
+        .update(inlinePriceUpdate(platform.id, price.price))
+        .eq('id', medicine.id)
+    }),
+  ])
+  for (const { error } of writes) {
+    if (error) throw error
+  }
 
   return [...cachedPrices, ...scrapedPrices]
 }
@@ -202,7 +272,7 @@ async function resolvePrices(requests: MedicineRequest[]): Promise<PharmacyPrice
   const medicineIds = requests.map(({ medicine_id }) => medicine_id)
   const { data: cachedPrices, error: cacheError } = await supabaseAdmin
     .from('pharmacy_prices')
-    .select('medicine_id, platform_name, price, updated_at')
+    .select('medicine_id, platform_name, price, in_stock, updated_at')
     .in('medicine_id', medicineIds)
     .order('updated_at', { ascending: false })
 
@@ -212,7 +282,12 @@ async function resolvePrices(requests: MedicineRequest[]): Promise<PharmacyPrice
   for (const row of cachedPrices ?? []) {
     if (!ACTIVE_PLATFORM_NAMES.has(row.platform_name)) continue
     const updatedAt = Date.parse(row.updated_at)
-    if (!Number.isFinite(updatedAt) || updatedAt < cutoff || updatedAt > now) continue
+    if (
+      !Number.isFinite(updatedAt)
+      || updatedAt < cutoff
+      || updatedAt > now
+      || !isValidPrice(Number(row.price), requests.find(({ medicine_id }) => medicine_id === row.medicine_id)?.mrp ?? 0)
+    ) continue
     const key = `${row.medicine_id}:${row.platform_name}`
     if (!latestFreshPrices.has(key)) latestFreshPrices.set(key, row)
   }

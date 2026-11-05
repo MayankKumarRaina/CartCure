@@ -26,14 +26,31 @@ export function mapMedicine(
 ): CatalogMedicine {
   const cachedPrices = pharmacyPrices
     ?? ('pharmacyPrices' in row ? row.pharmacyPrices : undefined)
-  const prices: Record<PlatformId, number> = {
-    tata1mg: cachedPrices === undefined ? row.mrp : 0,
-    pharmeasy: cachedPrices === undefined ? row.mrp : 0,
-    netmeds: cachedPrices === undefined ? row.mrp : 0,
-    apollo: cachedPrices === undefined ? row.mrp : 0,
-    truemeds: cachedPrices === undefined ? row.mrp : 0,
+  const databasePrices: CatalogMedicine['databasePrices'] = {
+    tata1mg: row.price_1mg ?? null,
+    pharmeasy: row.price_pharmeasy ?? null,
+    netmeds: row.price_netmeds ?? null,
+    apollo: row.price_apollo ?? null,
+    truemeds: row.price_truemeds ?? null,
+  }
+  const databasePrice = (value: number | null | undefined) => (
+    typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
+  )
+  const prices: CatalogMedicine['prices'] = {
+    tata1mg: databasePrice(row.price_1mg) || (cachedPrices === undefined ? row.mrp : 0),
+    pharmeasy: databasePrice(row.price_pharmeasy) || (cachedPrices === undefined ? row.mrp : 0),
+    netmeds: databasePrice(row.price_netmeds) || (cachedPrices === undefined ? row.mrp : 0),
+    apollo: databasePrice(row.price_apollo) || (cachedPrices === undefined ? row.mrp : 0),
+    truemeds: databasePrice(row.price_truemeds) || (cachedPrices === undefined ? row.mrp : 0),
+    healthkart: databasePrice(row.price_healthkart) || null,
+    truebasics: databasePrice(row.price_truebasics) || null,
   }
   const livePricePlatforms = new Set<PlatformId>()
+  for (const [platformId, price] of Object.entries(databasePrices) as [PlatformId, number | null][]) {
+    if (typeof price === 'number' && Number.isFinite(price) && price > 0) {
+      livePricePlatforms.add(platformId)
+    }
+  }
   const latestPrices = new Map<PlatformId, PharmacyPrice>()
   for (const price of cachedPrices ?? []) {
     const platformId = platformIds[price.platform_name.trim().toLowerCase()]
@@ -60,6 +77,15 @@ export function mapMedicine(
     mrp: row.mrp,
     categories: mappedCategories,
     rxRequired: row.is_rx_required,
+    productUrls: row.store_urls
+      ? {
+          ...('1mg' in row.store_urls && row.store_urls['1mg']
+            ? { tata1mg: row.store_urls['1mg'] }
+            : {}),
+          ...row.store_urls,
+        }
+      : undefined,
+    databasePrices,
     prices: 'resolvedPrices' in row ? row.resolvedPrices : prices,
     livePricePlatforms: 'livePricePlatforms' in row
       ? row.livePricePlatforms

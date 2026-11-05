@@ -4,7 +4,7 @@ const serviceRoleKey =
   || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 const maxMedicines = 100
 const priceCacheTtlMs = 7 * 24 * 60 * 60 * 1000
-const requestTimeoutMs = 3500
+const requestTimeoutMs = 10000
 const maxConcurrentPriceRequests = 8
 
 function resolveSupabaseUrl(key) {
@@ -42,7 +42,8 @@ const platforms = [
     name: 'PharmEasy',
     id: 'pharmeasy',
     columns: ['pharmeasy', 'pharmeasy_price', 'price_pharmeasy'],
-    search: (query) => `https://pharmeasy.in/search/all?name=${encodeURIComponent(query)}`,
+    search: (query) => `https://pharmeasy.in/api/search/search/?q=${encodeURIComponent(query)}`,
+    jsonSearch: true,
   },
   {
     name: 'Netmeds',
@@ -71,21 +72,46 @@ const ignoredTokens = new Set([
 ])
 
 async function supabaseRequest(path, options = {}) {
-  const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/${path}`, {
-    ...options,
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  })
-  if (!response.ok) {
-    const error = new Error(`Supabase request failed (${response.status}): ${await response.text()}`)
-    error.status = response.status
-    throw error
+  const maxAttempts = 3
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/${path}`, {
+        ...options,
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+      })
+      if (!response.ok) {
+        const error = new Error(`Supabase request failed (${response.status}): ${await response.text()}`)
+        error.status = response.status
+        if (attempt === maxAttempts || ![408, 429, 500, 502, 503, 504].includes(response.status)) throw error
+        await new Promise((resolve) => setTimeout(resolve, 300 * attempt))
+        continue
+      }
+      if (response.status === 204) return null
+      const body = await response.text()
+      if (!body.trim() && options.headers?.Prefer?.includes('return=minimal')) return null
+      if (!body.trim()) throw new Error(`Supabase returned an empty response for ${path}.`)
+      try {
+        return JSON.parse(body)
+      } catch (error) {
+        if (attempt === maxAttempts) {
+          throw new Error(`Supabase returned invalid JSON for ${path}.`, { cause: error })
+        }
+      }
+    } catch (error) {
+      if (attempt === maxAttempts || error.status) throw error
+      if (error.message?.startsWith('Supabase returned invalid JSON')) throw error
+      if (error.message?.startsWith('Supabase returned an empty response')) {
+        if (attempt === maxAttempts) throw error
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300 * attempt))
+    }
   }
-  return response.status === 204 ? null : response.json()
+  throw new Error(`Supabase request failed after ${maxAttempts} attempts for ${path}.`)
 }
 
 if (process.argv.includes('--ping-only')) {
@@ -101,48 +127,12 @@ function tokens(value) {
 
 function isLikelySameProduct(productName, medicine) {
   const productTokens = new Set(tokens(productName))
-  const medicineTokens = [...new Set([...tokens(medicine.brand_name), ...tokens(medicine.salt_composition ?? '')])]
-  if (medicineTokens.length === 0) return false
-  const matches = medicineTokens.filter((token) => productTokens.has(token)).length
-  return matches >= Math.min(2, medicineTokens.length)
-}
-
-function stableHash(value) {
-  let hash = 2166136261
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 16777619)
-  }
-  return hash >>> 0
-}
-
-function estimatedPrice(mrp, seed) {
-  const discount = 0.08 + (stableHash(seed) % 13) / 100
-  return Math.round(mrp * (1 - discount))
-}
-
-function deterministicPrices(medicine, reservedPrices) {
-  const prices = {}
-  const usedPrices = new Set(reservedPrices)
-  const minimumPrice = Math.round(medicine.mrp * 0.8)
-  const maximumPrice = Math.round(medicine.mrp * 0.92)
-  const priceRange = Math.max(1, maximumPrice - minimumPrice + 1)
-  const platformOrder = ['truemeds', 'pharmeasy', 'netmeds', 'tata1mg', 'apollo']
-
-  for (const platformId of platformOrder) {
-    let price = estimatedPrice(
-      medicine.mrp,
-      `${medicine.id}:${medicine.brand_name}:${platformId}`,
-    )
-    let attempts = 0
-    while (usedPrices.has(price) && attempts < priceRange) {
-      price = minimumPrice + ((price - minimumPrice + 1) % priceRange)
-      attempts += 1
-    }
-    prices[platformId] = price
-    usedPrices.add(price)
-  }
-  return prices
+  const brandTokens = [...new Set(tokens(medicine.brand_name))]
+  const saltTokens = [...new Set(tokens(medicine.salt_composition ?? ''))]
+  const brandMatches = brandTokens.filter((token) => productTokens.has(token)).length
+  const saltMatches = saltTokens.filter((token) => productTokens.has(token)).length
+  if (brandTokens.length === 0 || brandMatches === 0) return false
+  return brandTokens.length === 1 || brandMatches + saltMatches >= Math.min(2, brandTokens.length + saltTokens.length)
 }
 
 function extractOffers(html) {
@@ -210,14 +200,41 @@ async function fetchPrice(platform, medicine) {
   try {
     const response = await fetch(platform.search(query), {
       headers: {
-        Accept: 'text/html,application/xhtml+xml',
-        'User-Agent': 'Mozilla/5.0 (compatible; DawaDaam/1.0)',
+        Accept: platform.jsonSearch ? 'application/json, text/plain, */*' : 'text/html,application/xhtml+xml',
+        ...(platform.jsonSearch
+          ? { Origin: 'https://pharmeasy.in', Referer: 'https://pharmeasy.in/' }
+          : {}),
       },
       signal: controller.signal,
     })
-    if (!response.ok) throw new Error(`${platform.name} search returned HTTP ${response.status}`)
-    const offers = extractOffers(await response.text())
-      .filter((offer) => isLikelySameProduct(offer.name, medicine) && offer.price <= medicine.mrp)
+    if (!response.ok) {
+    const error = new Error(`${platform.name} search returned HTTP ${response.status}`)
+    error.status = response.status
+    throw error
+    }
+    const body = await response.text()
+    let offers
+    if (platform.jsonSearch) {
+      const results = JSON.parse(body)
+      offers = (Array.isArray(results?.data?.products) ? results.data.products : [])
+        .filter((product) => (
+          product?.productAvailabilityFlags?.isAvailable === true
+          && isLikelySameProduct(product.name ?? '', medicine)
+        ))
+        .map((product) => ({
+          name: product.name,
+          price: Number(product.salePriceDecimal ?? product.assuredDiscountPrice),
+        }))
+    } else {
+      offers = extractOffers(body)
+    }
+    offers = offers
+      .filter((offer) => (
+        isLikelySameProduct(offer.name, medicine)
+        && Number.isFinite(offer.price)
+        && offer.price >= Number(medicine.mrp) * 0.4
+        && offer.price <= Number(medicine.mrp) * 1.4
+      ))
       .sort((a, b) => a.price - b.price)
     return offers[0]?.price ?? null
   } finally {
@@ -239,7 +256,7 @@ async function loadPopularMedicines() {
 
 function isValidPrice(price, mrp) {
   const value = Number(price)
-  return Number.isFinite(value) && value > 0 && value <= mrp
+  return Number.isFinite(value) && value >= mrp * 0.4 && value <= mrp * 1.4
 }
 
 function priceColumn(medicine, platform) {
@@ -269,7 +286,7 @@ if (validMedicines.length === 0) {
 }
 const medicineIds = validMedicines.map(({ id }) => id)
 const priceQuery = new URLSearchParams({
-  select: 'medicine_id,platform_name,price,updated_at',
+  select: 'medicine_id,platform_name,price,in_stock,updated_at',
   medicine_id: `in.(${medicineIds.join(',')})`,
 })
 const cachedPrices = await supabaseRequest(`pharmacy_prices?${priceQuery.toString()}`)
@@ -289,6 +306,7 @@ for (const cachedPrice of cachedPrices) {
 
 const priceUpdates = []
 const refreshedPrices = new Map()
+const failedRequests = new Map()
 const work = []
 for (const medicine of validMedicines) {
   for (const platform of platforms) {
@@ -299,6 +317,7 @@ for (const medicine of validMedicines) {
       : null
     if (cachedValue !== null) {
       refreshedPrices.set(`${medicine.id}:${platform.id}`, cachedValue)
+      priceUpdates.push({ ...cachedPrice, in_stock: true })
       continue
     }
     work.push({ medicine, platform })
@@ -306,10 +325,12 @@ for (const medicine of validMedicines) {
 }
 
 let nextWorkIndex = 0
+const unavailablePlatforms = new Set()
 async function refreshWorker() {
   while (nextWorkIndex < work.length) {
     const { medicine, platform } = work[nextWorkIndex]
     nextWorkIndex += 1
+    if (unavailablePlatforms.has(platform.id)) continue
     try {
       const price = await fetchPrice(platform, medicine)
       if (price !== null) {
@@ -317,13 +338,16 @@ async function refreshWorker() {
           medicine_id: medicine.id,
           platform_name: platform.name,
           price,
+          in_stock: true,
           updated_at: new Date().toISOString(),
         }
         priceUpdates.push(priceRecord)
         refreshedPrices.set(`${medicine.id}:${platform.id}`, price)
       }
     } catch (error) {
-      console.warn(`Live price refresh failed for ${medicine.brand_name} — ${platform.name}:`, error)
+      const key = `${platform.name}: ${error.message}`
+      failedRequests.set(key, (failedRequests.get(key) ?? 0) + 1)
+      if (error.status === 403 || error.status === 404) unavailablePlatforms.add(platform.id)
     }
   }
 }
@@ -331,11 +355,14 @@ async function refreshWorker() {
 await Promise.all(
   Array.from({ length: Math.min(maxConcurrentPriceRequests, work.length) }, () => refreshWorker()),
 )
+for (const [failure, count] of failedRequests) {
+  console.warn(`Live price request failure (${count}): ${failure}`)
+}
 
 if (priceUpdates.length > 0) {
   await supabaseRequest('pharmacy_prices?on_conflict=medicine_id%2Cplatform_name', {
     method: 'POST',
-    headers: { Prefer: 'resolution=merge-duplicates' },
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify(priceUpdates),
   })
 }
@@ -348,13 +375,16 @@ for (const medicine of validMedicines) {
     const cacheValue = refreshedPrices.get(`${medicine.id}:${platform.id}`)
     if (cacheValue !== undefined) resolvedPrices.set(platform.id, cacheValue)
   }
-  const fallbackPrices = deterministicPrices(medicine, resolvedPrices.values())
   const patch = {}
   for (const platform of platforms) {
     const column = priceColumn(medicine, platform)
     if (!column) continue
-    const price = resolvedPrices.get(platform.id) ?? fallbackPrices[platform.id]
-    if (isValidPrice(price, Number(medicine.mrp))) patch[column] = price
+    const livePrice = resolvedPrices.get(platform.id)
+    if (livePrice !== undefined && isValidPrice(livePrice, Number(medicine.mrp))) {
+      patch[column] = livePrice
+    } else if (medicine[column] !== null && medicine[column] !== undefined) {
+      patch[column] = null
+    }
   }
 
   if (Object.keys(patch).length === 0) {
@@ -380,4 +410,37 @@ for (const medicine of validMedicines) {
 }
 
 console.log(`Inline price columns patched for ${patched} medicines; skipped ${skippedPatch} without matching price columns.`)
+const finalRows = await supabaseRequest(
+  `medicines?select=id,price_1mg,price_pharmeasy,price_netmeds,price_apollo,price_truemeds&id=in.(${medicineIds.join(',')})`,
+)
+const finalCache = await supabaseRequest(`pharmacy_prices?${priceQuery.toString()}`)
+if (!Array.isArray(finalRows) || !Array.isArray(finalCache)) {
+  throw new Error('Supabase returned an invalid shape while verifying refreshed pharmacy prices.')
+}
+const mrpByMedicine = new Map(validMedicines.map(({ id, mrp }) => [id, Number(mrp)]))
+const storeCounts = new Map(platforms.map(({ name }) => [name, 0]))
+const inlineCounts = new Map(platforms.map(({ id }) => [id, 0]))
+for (const row of finalCache) {
+  const updatedAt = Date.parse(row.updated_at)
+  if (
+    storeCounts.has(row.platform_name)
+    && Number.isFinite(updatedAt)
+    && updatedAt >= Date.now() - priceCacheTtlMs
+    && updatedAt <= Date.now()
+    && isValidPrice(row.price, mrpByMedicine.get(row.medicine_id) ?? 0)
+  ) {
+    storeCounts.set(row.platform_name, storeCounts.get(row.platform_name) + 1)
+  }
+}
+for (const row of finalRows) {
+  for (const platform of platforms) {
+    const column = priceColumn(row, platform)
+    if (column && isValidPrice(row[column], mrpByMedicine.get(row.id) ?? 0)) {
+      inlineCounts.set(platform.id, inlineCounts.get(platform.id) + 1)
+    }
+  }
+}
 console.log(`Refreshed/verified ${validMedicines.length} popular medicines in Supabase`)
+console.log('Fresh pharmacy_prices counts:', Object.fromEntries(storeCounts))
+console.log('Valid inline price counts:', Object.fromEntries(inlineCounts))
+console.log(`Upserted ${priceUpdates.length} live pharmacy cache rows; scrape failures: ${failedRequests.size} distinct failure type(s).`)
