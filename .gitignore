@@ -18,3 +18,5 @@ node_modules
 # Scraped catalog data
 *.csv
 scraper/*.csv
+
+tsconfig.tsbuildinfo
