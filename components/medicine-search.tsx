@@ -390,7 +390,7 @@ export function MedicineSearch() {
     }
     const term = query.trim()
     const currentSearch = ++searchRequestId.current
-    if (!term || submittedSearch !== null) {
+    if (term.length < 2 || submittedSearch !== null) {
       setSearchResults([])
       setSearching(false)
       return
@@ -713,6 +713,8 @@ export function MedicineSearch() {
   function updateQuery(value: string) {
     operationId.current += 1
     setQuery(value)
+    setSearchResults([])
+    setSearching(value.trim().length >= 2)
     setSubmittedSearch(null)
     setBrowseMedicines([])
     pendingLivePageRef.current = null
@@ -726,6 +728,8 @@ export function MedicineSearch() {
   }
 
   const visibleSearchResults = query.trim() && submittedSearch === null ? searchResults : []
+  const isAutocompleteOpen = query.trim().length >= 2
+    && submittedSearch === null
   const selectedCatalogMedicine = selectedMedicine
     ? catalogMedicines.find(({ id }) => id === selectedMedicine.id) ?? selectedMedicine
     : null
@@ -980,8 +984,18 @@ export function MedicineSearch() {
             </button>
           </form>
 
-          {visibleSearchResults.length > 0 && (
+          {isAutocompleteOpen && (
             <ul className="absolute inset-x-0 top-[calc(100%-0.5rem)] z-40 max-h-80 overflow-y-auto rounded-xl border bg-popover p-1 shadow-lg" aria-label="Medicine suggestions">
+              {searching && (
+                <li className="px-3 py-2.5 text-sm text-muted-foreground" role="status">
+                  Searching medicines...
+                </li>
+              )}
+              {!searching && visibleSearchResults.length === 0 && (
+                <li className="px-3 py-2.5 text-sm text-muted-foreground" role="status">
+                  No suggestions found.
+                </li>
+              )}
               {visibleSearchResults.map((medicine) => (
                 <li key={medicine.id}>
                   <button

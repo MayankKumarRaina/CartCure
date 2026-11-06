@@ -14,10 +14,57 @@ const CACHE_HEADERS = {
   'CDN-Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
 }
 
-function medicineSearchFilter(term: string) {
-  const safeTerm = term.replace(/[(),"]/g, ' ').replace(/[\\%_]/g, '\\$&').trim()
-  const pattern = `%${safeTerm}%`
-  return `brand_name.ilike.${pattern},salt_composition.ilike.${pattern}`
+function safeSearchTerm(term: string) {
+  return term.replace(/[(),"]/g, ' ').replace(/[\\%_]/g, '\\$&').trim()
+}
+
+function isStatementTimeout(error: unknown) {
+  return typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && error.code === '57014'
+}
+
+function sortBrandMatches(rows: Medicine[], term: string) {
+  const normalizedTerm = term.toLocaleLowerCase()
+  return rows.sort((a, b) => {
+    const rank = (medicine: Medicine) => {
+      const brandName = medicine.brand_name.toLocaleLowerCase()
+      if (brandName === normalizedTerm) return 0
+      return brandName.startsWith(normalizedTerm) ? 1 : 2
+    }
+
+    return rank(a) - rank(b)
+      || b.search_count - a.search_count
+      || a.brand_name.localeCompare(b.brand_name)
+  })
+}
+
+async function fetchBrandMatches(term: string, limit: number) {
+  const safeTerm = safeSearchTerm(term)
+  const [prefixResult, substringResult] = await Promise.all([
+    supabase.from('medicines').select('*').ilike('brand_name', `${safeTerm}%`).limit(limit),
+    supabase.from('medicines').select('*').ilike('brand_name', `%${safeTerm}%`).limit(limit * 2),
+  ])
+  if (prefixResult.error) throw prefixResult.error
+  if (substringResult.error) throw substringResult.error
+
+  const rowsById = new Map<string, Medicine>()
+  for (const medicine of [...prefixResult.data, ...substringResult.data]) {
+    rowsById.set(medicine.id, medicine)
+  }
+  return sortBrandMatches([...rowsById.values()], term)
+}
+
+async function fetchBrandPrefix(term: string, limit: number) {
+  const safeTerm = safeSearchTerm(term)
+  const { data, error } = await supabase
+    .from('medicines')
+    .select('*')
+    .ilike('brand_name', `${safeTerm}%`)
+    .limit(limit)
+  if (error) throw error
+  return data
 }
 
 function numberParameter(value: string | null, fallback: number, maximum: number) {
@@ -79,25 +126,47 @@ export async function GET(request: Request) {
 
   try {
     if (mode === 'autocomplete') {
-      const pattern = `%${query.replace(/[(),"]/g, ' ').replace(/[\\%_]/g, '\\$&')}%`
-      const [brandResult, saltResult] = await Promise.all([
-        supabase.from('medicines').select('*').ilike('brand_name', pattern).order('mrp', { ascending: true }).limit(8),
-        supabase.from('medicines').select('*').ilike('salt_composition', pattern).order('mrp', { ascending: true }).limit(8),
-      ])
-      if (brandResult.error) throw brandResult.error
-      if (saltResult.error) throw saltResult.error
-      const uniqueRows = new Map<string, Medicine>()
-      for (const medicine of [...brandResult.data, ...saltResult.data]) uniqueRows.set(medicine.id, medicine)
+      const rows = query.length < 3
+        ? await fetchBrandPrefix(query, limit)
+        : await fetchBrandMatches(query, limit)
       return NextResponse.json(
-        await resolveRows([...uniqueRows.values()].slice(0, limit)),
+        await resolveRows(rows.slice(0, limit)),
+        { headers: CACHE_HEADERS },
+      )
+    }
+
+    if (query) {
+      const brandRows = query.length < 3
+        ? await fetchBrandPrefix(query, limit)
+        : await fetchBrandMatches(query, limit)
+      const resultsById = new Map(brandRows.slice(0, limit).map((medicine) => [medicine.id, medicine]))
+      if (query.length >= 3 && resultsById.size < 5) {
+        const safeTerm = safeSearchTerm(query)
+        const { data: saltRows, error } = await supabase
+          .from('medicines')
+          .select('*')
+          .ilike('salt_composition', `%${safeTerm}%`)
+          .limit(limit)
+        if (error) throw error
+        for (const medicine of saltRows) {
+          if (!resultsById.has(medicine.id)) resultsById.set(medicine.id, medicine)
+        }
+      }
+
+      const matchingRows = query.length >= 3
+        ? [...sortBrandMatches(
+          [...resultsById.values()].filter((medicine) => medicine.brand_name.toLocaleLowerCase().includes(query.toLocaleLowerCase())),
+          query,
+        ), ...[...resultsById.values()].filter((medicine) => !medicine.brand_name.toLocaleLowerCase().includes(query.toLocaleLowerCase()))]
+        : [...resultsById.values()]
+      return NextResponse.json(
+        await resolveRows(matchingRows.slice(offset, offset + limit)),
         { headers: CACHE_HEADERS },
       )
     }
 
     let medicineQuery = supabase.from('medicines').select('*')
-    if (query) {
-      medicineQuery = medicineQuery.or(medicineSearchFilter(query))
-    } else if (categoryValue) {
+    if (categoryValue) {
       medicineQuery = medicineQuery.eq('category', categoryValue)
     } else {
       medicineQuery = medicineQuery.in('category', [...CATEGORIES])
@@ -110,6 +179,18 @@ export async function GET(request: Request) {
     if (error) throw error
     return NextResponse.json(await resolveRows(data), { headers: CACHE_HEADERS })
   } catch (error) {
+    if (query && isStatementTimeout(error)) {
+      try {
+        const rows = await fetchBrandPrefix(query, limit)
+        return NextResponse.json(
+          await resolveRows(rows.slice(offset, offset + limit)),
+          { headers: CACHE_HEADERS },
+        )
+      } catch (fallbackError) {
+        console.error('Unable to retrieve medicine search results after a statement timeout:', fallbackError)
+        return NextResponse.json({ error: 'Unable to retrieve medicine search results.' }, { status: 500 })
+      }
+    }
     console.error('Unable to retrieve medicine search results:', error)
     return NextResponse.json({ error: 'Unable to retrieve medicine search results.' }, { status: 500 })
   }
